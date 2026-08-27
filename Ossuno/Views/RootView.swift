@@ -65,25 +65,28 @@ struct RootView: View {
             copyLink: { model.copyURLs(style: .plain) },
             copyMarkdown: { model.copyURLs(style: .markdown) },
             copyHTML: { model.copyURLs(style: .html) },
-            rename: {
-                guard !model.isOrganizingCloud else { return }
-                model.browser.beginRenaming()
-            },
+            rename: { model.requestRenameSelection() },
             openSelection: { openFocusedItem(model) },
-            refresh: { Task { await model.refreshListing() } },
+            refresh: {
+                if model.isBucketSearchActive {
+                    Task { await model.runBucketSearch() }
+                } else {
+                    Task { await model.refreshListing() }
+                }
+            },
             quickLook: { Task { await model.quickLookSelection() } },
             canShowInformation: model.canShowInformation,
             showInformation: { model.showInspector = true },
-            canActOnObject: model.browser.primarySelection != nil && model.browser.selectedObjects.count == 1,
+            canActOnObject: model.actionableObjects.count == 1,
             showObjectProperties: {
-                if let object = model.browser.primarySelection { model.presentObjectProperties(for: object) }
+                if let object = model.actionableObjects.first { model.presentObjectProperties(for: object) }
             },
             grid: { Motion.run(reduceMotion) { model.setPreferredViewMode(.grid) } },
             list: { Motion.run(reduceMotion) { model.setPreferredViewMode(.list) } },
             goBack: { model.goBack() },
             goForward: { model.goForward() },
-            selectAll: { model.browser.selectAllVisible() },
-            deselectAll: { model.browser.clearSelection() }
+            selectAll: { model.selectAllVisible() },
+            deselectAll: { model.clearVisibleSelection() }
         )
     }
 
@@ -124,17 +127,17 @@ struct RootView: View {
                 }
                 return event
             }
-            if event.keyCode == 51, flags.isEmpty, !model.browser.selectedKeys.isEmpty {
+            if event.keyCode == 51, flags.isEmpty, !model.actionableSelectionKeys.isEmpty {
                 guard !model.isOrganizingCloud else { return event }
                 model.requestDeleteSelection()
                 return nil
             }
             if BrowserKeyEvent.isSelectAll(event, flags: flags) {
-                model.browser.selectAllVisible()
+                model.selectAllVisible()
                 return nil
             }
             if BrowserKeyEvent.isDeselectAll(event, flags: flags) {
-                model.browser.clearSelection()
+                model.clearVisibleSelection()
                 return nil
             }
             if BrowserKeyEvent.isCut(event, flags: flags) {
@@ -152,15 +155,28 @@ struct RootView: View {
                     model.browser.cancelRenaming()
                     return nil
                 }
-                if !model.browser.selectedKeys.isEmpty {
-                    model.browser.clearSelection()
+                if !model.actionableSelectionKeys.isEmpty {
+                    model.clearVisibleSelection()
                     return nil
                 }
             }
             if event.keyCode == 125, flags == .command,
-               !model.browser.selectedKeys.isEmpty {
+               !model.actionableSelectionKeys.isEmpty {
                 openFocusedItem(model)
                 return nil
+            }
+            if model.isBucketSearchActive {
+                // Arrow keys belong to the search table. Return / Space still
+                // follow the search selection, not the hidden folder listing.
+                if event.keyCode == 36, flags.isEmpty {
+                    openFocusedItem(model)
+                    return nil
+                }
+                if event.keyCode == 49, flags.isEmpty, model.previewItem == nil {
+                    Task { await model.quickLookSelection() }
+                    return nil
+                }
+                return event
             }
             if [123, 124, 125, 126].contains(event.keyCode),
                flags.isEmpty || flags == .shift {
@@ -183,14 +199,17 @@ struct RootView: View {
     }
 
     private func openFocusedItem(_ model: AppModel) {
+        if model.isBucketSearchActive {
+            guard model.searchSelectedObjects.count == 1,
+                  let object = model.searchSelectedObjects.first
+            else { return }
+            model.openVisibleItem(id: object.key)
+            return
+        }
         let key = model.browser.focusedKey
             ?? model.browser.orderedVisibleKeys.first(where: { model.browser.selectedKeys.contains($0) })
         guard let key else { return }
-        if let folder = model.browser.folders.first(where: { $0.prefix == key }) {
-            model.openFolder(folder)
-        } else {
-            Task { await model.quickLookSelection() }
-        }
+        model.openVisibleItem(id: key)
     }
 }
 
@@ -522,6 +541,14 @@ private struct RootPresentation: ViewModifier {
                 model.showMenuBarExtra = count > 0 && model.settings.showMenuBarWhileTransferring
             }
             .onChange(of: model.browser.selectedKeys) { _, _ in
+                guard model.showInspector else { return }
+                Task { await model.loadInspector() }
+            }
+            .onChange(of: model.searchSelectedKeys) { _, _ in
+                guard model.showInspector else { return }
+                Task { await model.loadInspector() }
+            }
+            .onChange(of: model.isBucketSearchActive) { _, _ in
                 guard model.showInspector else { return }
                 Task { await model.loadInspector() }
             }

@@ -1233,14 +1233,18 @@ final class TransferEngine {
         for url in urls {
             var isDir: ObjCBool = false
             if fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+                if isPackage(url) {
+                    result.append(ExpandedFile(url: url, relativePath: url.lastPathComponent))
+                    continue
+                }
                 if let enumerator = fm.enumerator(
                     at: url,
-                    includingPropertiesForKeys: [.isRegularFileKey],
+                    includingPropertiesForKeys: [.isRegularFileKey, .isPackageKey],
                     options: [.skipsHiddenFiles, .skipsPackageDescendants]
                 ) {
                     for case let file as URL in enumerator {
-                        let values = try? file.resourceValues(forKeys: [.isRegularFileKey])
-                        if values?.isRegularFile == false { continue }
+                        let values = try? file.resourceValues(forKeys: [.isRegularFileKey, .isPackageKey])
+                        guard values?.isRegularFile == true || values?.isPackage == true else { continue }
                         let relative = PathTemplate.nestedRelative(
                             rootName: url.lastPathComponent,
                             rootPath: url.path,
@@ -1256,8 +1260,22 @@ final class TransferEngine {
         return Expansion(files: result, skipped: 0)
     }
 
+    nonisolated private static func isPackage(_ url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.isPackageKey]))?.isPackage == true
+    }
+
     nonisolated private static func prepare(url: URL, convertHEIC: Bool) async throws -> PreparedUpload {
         try await ensureUbiquitousItemIsDownloaded(url)
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+           isDirectory.boolValue || isPackage(url) {
+            throw OSSServiceError(
+                statusCode: 0,
+                code: "UnsupportedPackage",
+                message: "无法将程序包作为单个文件上传：\(url.lastPathComponent)",
+                requestId: ""
+            )
+        }
         let ext = url.pathExtension.lowercased()
         if convertHEIC, ext == "heic" || ext == "heif" {
             guard let image = NSImage(contentsOf: url),

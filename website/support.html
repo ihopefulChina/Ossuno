@@ -59,7 +59,7 @@
 
       <section id="first-open" data-reveal>
         <h2>首次打开被 macOS 拦截</h2>
-        <p>Ossuno 1.0.0 的 Apple Silicon 与 Intel 两个 DMG 均采用 ad-hoc 代码签名（没有开发者身份），不是 Developer ID 签名，且未经 Apple 公证。因此 macOS 无法验证开发者或确认安装包已经过 Apple 恶意软件检查，首次打开通常会触发 Gatekeeper。</p>
+        <p>Ossuno 1.0.1 的 Apple Silicon 与 Intel 两个 DMG 均采用 ad-hoc 代码签名（没有开发者身份），不是 Developer ID 签名，且未经 Apple 公证。因此 macOS 无法验证开发者或确认安装包已经过 Apple 恶意软件检查，首次打开通常会触发 Gatekeeper。</p>
         <ol>
           <li>打开 DMG，把 Ossuno 拖进「应用程序」，然后双击 Ossuno 尝试打开一次。</li>
           <li>若 macOS 阻止运行，打开「系统设置 → 隐私与安全」，滚动到“安全性”，点击「仍要打开」。</li>
@@ -74,7 +74,7 @@
           <li>确认使用 RAM 子用户，而不是主账号 AccessKey；从仅允许访问所需 Bucket 的最小权限开始。</li>
           <li>检查 AccessKey ID、Secret、可选 STS Token 与地域是否匹配。临时 Token 过期后需要重新填写。</li>
           <li>使用自定义 Endpoint 时填写完整主机名；私有网络地址只有在当前 Mac 能访问对应网络时才可用。</li>
-          <li>如错误包含权限拒绝，请在阿里云控制台核对列举、读取、上传、删除或复制操作所需的 RAM 权限。1.0.0 的安全复制与回滚还会按场景使用 <code>oss:GetBucketVersioning</code>、<code>oss:GetObjectAcl</code>、<code>oss:GetObjectVersion</code> 和 <code>oss:DeleteObjectVersion</code>。</li>
+          <li>如错误包含权限拒绝，请在阿里云控制台核对列举、读取、上传、删除或复制操作所需的 RAM 权限。安全复制与回滚还会按场景使用 <code>oss:GetBucketVersioning</code>、<code>oss:GetObjectAcl</code>、<code>oss:GetObjectVersion</code> 和 <code>oss:DeleteObjectVersion</code>。</li>
         </ol>
       </section>
 
@@ -106,7 +106,7 @@
 
       <section id="mcp" data-reveal>
         <h2>让 AI 操作 OSS（MCP）</h2>
-        <p><code>ossuno-mcp</code> 1.0.0 已发布到 npm。运行 <code>npx ossuno-mcp auth</code> 配置凭证，再运行 <code>npx ossuno-mcp install</code>，即可注册到 Codex、Claude Desktop、Claude Code、Cursor、Trae、Windsurf 等本机 AI 客户端。AI 可浏览 Bucket、上传下载文件和生成临时下载链接，并自带 OSS 专家提示词；凭证保存在 macOS 钥匙串，与 App 账号相互独立。<a href="mcp.html">查看 ossuno-mcp 接入指南</a>，完整命令与客户端配置见 <a href="https://github.com/ihopefulChina/Ossuno/blob/main/docs/mcp.md" rel="noopener">GitHub 文档</a>。</p>
+        <p><code>ossuno-mcp</code> 已发布到 npm。运行 <code>npx ossuno-mcp auth</code> 配置凭证，再运行 <code>npx ossuno-mcp install</code>，即可注册到 Codex、Claude Desktop、Claude Code、Cursor、Trae、Windsurf 等本机 AI 客户端。AI 可浏览 Bucket、上传下载文件和生成临时下载链接，并自带 OSS 专家提示词；凭证保存在 macOS 钥匙串，与 App 账号相互独立。<a href="mcp.html">查看 ossuno-mcp 接入指南</a>，完整命令与客户端配置见 <a href="https://github.com/ihopefulChina/Ossuno/blob/main/docs/mcp.md" rel="noopener">GitHub 文档</a>。</p>
       </section>
 
       <section id="issue" data-reveal>

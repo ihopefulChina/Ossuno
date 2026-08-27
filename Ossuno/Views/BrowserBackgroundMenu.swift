@@ -217,6 +217,11 @@ final class BrowserItemHitRegistry: @unchecked Sendable {
     }
 }
 
+enum BrowserContextKind: Equatable {
+    case folderListing
+    case bucketSearch
+}
+
 struct BrowserContextActions {
     var pasteTitle: String
     var pasteIntoFolderTitle: String
@@ -230,6 +235,8 @@ struct BrowserContextActions {
     var isFavorite: (String) -> Bool
     var deleteTitle: (String) -> String
     var downloadTitle: (String) -> String
+    var showsRevealInFolder: Bool
+    var usesSearchEmptyMenu: Bool
 
     var onHighlight: (String) -> Void
     var onSelectItem: (String, BrowserSelectionModifiers) -> Void
@@ -255,6 +262,7 @@ struct BrowserContextActions {
     var onCopyLink: (String) -> Void
     var onCopyMarkdown: (String) -> Void
     var onObjectProperties: (String) -> Void
+    var onRevealInFolder: (String) -> Void
 }
 
 struct BrowserItemMarker: NSViewRepresentable {
@@ -619,6 +627,15 @@ private final class MenuTarget: NSObject {
     }
 
     private func populateEmpty(_ menu: NSMenu) {
+        if actions.usesSearchEmptyMenu {
+            add(menu, "全选", #selector(performSelectAll))
+            if actions.canDeselect {
+                add(menu, "取消选择", #selector(performDeselect))
+            }
+            separator(menu)
+            add(menu, "再试一次", #selector(performRefresh))
+            return
+        }
         add(menu, actions.pasteTitle, #selector(performPaste), enabled: actions.canPaste())
         separator(menu)
         add(menu, "上传", #selector(performUpload))
@@ -658,12 +675,17 @@ private final class MenuTarget: NSObject {
     private func populateFile(_ menu: NSMenu, key: String) {
         add(menu, "快速查看", #selector(performQuickLook))
         add(menu, actions.deleteTitle(key), #selector(performDelete), enabled: !actions.isOrganizing)
+        if actions.showsRevealInFolder {
+            add(menu, "显示所在文件夹", #selector(performRevealInFolder))
+        }
         separator(menu)
         add(menu, "复制链接", #selector(performCopyLink))
         add(menu, "复制 Markdown", #selector(performCopyMarkdown))
         add(menu, "复制", #selector(performCopy))
         add(menu, "剪切", #selector(performCut))
-        add(menu, actions.pasteTitle, #selector(performPaste), enabled: actions.canPaste())
+        if !actions.showsRevealInFolder {
+            add(menu, actions.pasteTitle, #selector(performPaste), enabled: actions.canPaste())
+        }
         add(menu, actions.downloadTitle(key), #selector(performDownloadItem))
         add(menu, "重命名", #selector(performRename), enabled: !actions.isOrganizing)
         add(menu, "对象属性", #selector(performObjectProperties))
@@ -713,9 +735,117 @@ private final class MenuTarget: NSObject {
     @objc func performObjectProperties() {
         if case .file(let key) = hit { actions.onObjectProperties(key) }
     }
+    @objc func performRevealInFolder() {
+        if case .file(let key) = hit { actions.onRevealInFolder(key) }
+    }
 }
 
 extension BrowserContextActions {
+    @MainActor
+    static func live(
+        model: AppModel,
+        kind: BrowserContextKind,
+        showFileImporter: @escaping () -> Void
+    ) -> BrowserContextActions {
+        let isSearch = kind == .bucketSearch
+        return BrowserContextActions(
+            pasteTitle: model.pasteMenuTitle,
+            pasteIntoFolderTitle: model.pasteIntoFolderTitle,
+            canPaste: { model.canPaste },
+            hasCloudClipboard: { model.canPasteCloudItems },
+            canDeselect: !model.actionableSelectionKeys.isEmpty,
+            isOrganizing: model.isOrganizingCloud,
+            tableItemIDs: isSearch
+                ? model.searchController.results.map(\.key)
+                : model.browser.orderedVisibleKeys,
+            viewMode: isSearch ? .list : model.browser.viewMode,
+            selectedKeys: { model.actionableSelectionKeys },
+            isFavorite: { prefix in model.isFavorite(prefix: prefix) },
+            deleteTitle: { model.deleteMenuTitle(clickedKey: $0) },
+            downloadTitle: { model.downloadMenuTitle(clickedKey: $0) },
+            showsRevealInFolder: isSearch,
+            usesSearchEmptyMenu: isSearch,
+            onHighlight: { model.selectForContextMenu($0) },
+            onSelectItem: { key, modifiers in
+                if isSearch {
+                    if modifiers.isEmpty {
+                        model.selectSearchKeys([key])
+                    }
+                    return
+                }
+                model.browser.select(key: key, modifiers: modifiers)
+            },
+            onBackgroundClick: { model.clearVisibleSelection() },
+            onOpenItem: { model.openVisibleItem(id: $0) },
+            onPaste: { model.paste() },
+            onPasteInto: { model.paste(into: $0) },
+            onUpload: showFileImporter,
+            onPasteLocal: { model.pasteFromClipboard() },
+            onNewFolder: { model.wantsNewFolder = true },
+            onDownloadCurrent: { model.downloadCurrentPrefix() },
+            onRefresh: {
+                if isSearch {
+                    Task { await model.runBucketSearch() }
+                } else {
+                    Task { await model.refreshListing() }
+                }
+            },
+            onSelectAll: { model.selectAllVisible() },
+            onDeselect: { model.clearVisibleSelection() },
+            onOpenFolder: { prefix in
+                if let folder = model.browser.folders.first(where: { $0.prefix == prefix }) {
+                    model.openFolder(folder)
+                }
+            },
+            onQuickLook: { key in
+                model.selectForContextMenu(key)
+                Task {
+                    if let object = model.object(forKey: key) {
+                        await model.quickLook(object)
+                    } else {
+                        await model.quickLookSelection()
+                    }
+                }
+            },
+            onCopy: { model.copyCloudSelection(clickedKey: $0) },
+            onCut: { model.cutCloudSelection(clickedKey: $0) },
+            onRename: { model.requestRename(key: $0) },
+            onDelete: { key in
+                model.requestDeleteSelection(
+                    keys: model.menuActionKeys(clickedKey: key),
+                    deferConfirmation: true
+                )
+            },
+            onDownload: { key in
+                model.selectForContextMenu(key)
+                model.downloadSelection()
+            },
+            onToggleFavorite: { prefix in
+                if let folder = model.browser.folders.first(where: { $0.prefix == prefix }) {
+                    model.toggleFavorite(prefix: prefix, name: folder.name)
+                }
+            },
+            onCopyLink: { key in
+                model.selectForContextMenu(key)
+                model.copyURLs(style: .plain)
+            },
+            onCopyMarkdown: { key in
+                model.selectForContextMenu(key)
+                model.copyURLs(style: .markdown)
+            },
+            onObjectProperties: { key in
+                if let object = model.object(forKey: key) {
+                    model.presentObjectProperties(for: object)
+                }
+            },
+            onRevealInFolder: { key in
+                if let object = model.object(forKey: key) {
+                    Task { await model.openSearchResult(object) }
+                }
+            }
+        )
+    }
+
     static var disabled: BrowserContextActions {
         BrowserContextActions(
             pasteTitle: "粘贴",
@@ -730,6 +860,8 @@ extension BrowserContextActions {
             isFavorite: { _ in false },
             deleteTitle: { _ in "删除" },
             downloadTitle: { _ in "下载" },
+            showsRevealInFolder: false,
+            usesSearchEmptyMenu: false,
             onHighlight: { _ in },
             onSelectItem: { _, _ in },
             onBackgroundClick: {},
@@ -753,7 +885,8 @@ extension BrowserContextActions {
             onToggleFavorite: { _ in },
             onCopyLink: { _ in },
             onCopyMarkdown: { _ in },
-            onObjectProperties: { _ in }
+            onObjectProperties: { _ in },
+            onRevealInFolder: { _ in }
         )
     }
 }

@@ -201,7 +201,7 @@ final class MCPOSSClient: @unchecked Sendable {
         overwrite: Bool = false
     ) async throws -> UploadResult {
         let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
-        let size = (attributes[.size] as? Int64) ?? 0
+        let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
         var headers: [String: String] = [:]
         if let contentType = try MCPHTTPSafety.validatedContentType(contentType) {
             headers["Content-Type"] = contentType
@@ -335,7 +335,7 @@ final class MCPOSSClient: @unchecked Sendable {
             try? FileManager.default.removeItem(at: tempURL)
             throw error
         }
-        let size = (try FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? Int64) ?? 0
+        let size = (try FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? NSNumber)?.int64Value ?? 0
         return DownloadResult(
             bucket: bucket,
             key: key,

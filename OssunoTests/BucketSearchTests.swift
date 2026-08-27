@@ -218,6 +218,44 @@ struct BucketSearchTests {
         #expect(controller.results.map(\.key) == ["new.txt"])
     }
 
+    @Test @MainActor func incompleteSnapshotIsNotReusedFromCache() async {
+        let pages = SearchPageSequence(pages: [
+            ObjectListing(
+                folders: [],
+                objects: [object(key: "one.txt")],
+                isTruncated: true,
+                nextToken: "same"
+            ),
+            ObjectListing(
+                folders: [],
+                objects: [object(key: "two.txt")],
+                isTruncated: true,
+                nextToken: "same"
+            ),
+            ObjectListing(
+                folders: [],
+                objects: [object(key: "fresh.txt")],
+                isTruncated: false,
+                nextToken: nil
+            )
+        ])
+        let controller = BucketSearchController()
+        let query = query(text: "")
+
+        await controller.search(query: query, now: now) { token in
+            try await pages.load(token: token)
+        }
+        #expect(controller.snapshot?.isIncomplete == true)
+
+        await controller.search(query: query, now: now) { token in
+            try await pages.load(token: token)
+        }
+
+        #expect(controller.results.map(\.key) == ["fresh.txt"])
+        #expect(controller.snapshot?.isIncomplete == false)
+        #expect(await pages.requestedTokens() == [nil, "same", nil])
+    }
+
     private func query(text: String) -> BucketSearchQuery {
         BucketSearchQuery(
             accountID: accountID,

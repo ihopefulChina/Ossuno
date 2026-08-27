@@ -97,4 +97,34 @@ struct OSSXMLACLTests {
             try OSSXML.tags(from: Data(xml.utf8))
         }
     }
+
+    @Test func listingPreservesLeadingAndTrailingSpacesInKeys() throws {
+        let data = Data("""
+        <ListBucketResult>
+          <CommonPrefixes><Prefix> folder/</Prefix></CommonPrefixes>
+          <Contents><Key> photo.jpg</Key><Size>1</Size><ETag>a</ETag></Contents>
+          <Contents><Key>photo.jpg </Key><Size>2</Size><ETag>b</ETag></Contents>
+          <IsTruncated>true</IsTruncated>
+          <NextContinuationToken> token + value </NextContinuationToken>
+        </ListBucketResult>
+        """.utf8)
+
+        let listing = try OSSXML.listing(from: data)
+        #expect(listing.folders.map(\.prefix) == [" folder/"])
+        #expect(listing.objects.map(\.key) == [" photo.jpg", "photo.jpg "])
+        #expect(listing.nextToken == " token + value ")
+    }
+
+    @Test func completeMultipartUploadXMLEscapesETags() {
+        let xml = String(
+            data: OSSXML.completeMultipartUploadXML(parts: [
+                (number: 2, etag: "b&2"),
+                (number: 1, etag: "a<1>")
+            ]),
+            encoding: .utf8
+        )
+        #expect(
+            xml == "<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>\"a&lt;1&gt;\"</ETag></Part><Part><PartNumber>2</PartNumber><ETag>\"b&amp;2\"</ETag></Part></CompleteMultipartUpload>"
+        )
+    }
 }

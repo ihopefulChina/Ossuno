@@ -87,11 +87,14 @@ jobs:
 
           app_executable="$universal_derived_data/Build/Products/Release/Ossuno.app/Contents/MacOS/Ossuno"
           app_info="$universal_derived_data/Build/Products/Release/Ossuno.app/Contents/Info.plist"
+          version_info="$(scripts/project-version.sh)"
+          expected_version="${version_info%% *}"
+          expected_build="${version_info##* }"
           lipo "$app_executable" -verify_arch arm64 x86_64
           test "$(lipo -archs "$app_executable")" = "x86_64 arm64" || \
             test "$(lipo -archs "$app_executable")" = "arm64 x86_64"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_info")" = "1.0.0"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app_info")" = "3"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_info")" = "$expected_version"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app_info")" = "$expected_build"
 
       - name: Analyze
         run: |

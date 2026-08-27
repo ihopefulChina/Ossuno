@@ -1,6 +1,6 @@
 {
   "name": "ossuno-mcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Ossuno 的 MCP 服务器 — 让 Codex、Claude、Cursor 等 AI 客户端直接操作阿里云 OSS（浏览、上传、下载、临时链接）",
   "license": "MIT",
   "repository": {
@@ -26,8 +26,8 @@
     "README.md"
   ],
   "optionalDependencies": {
-    "ossuno-mcp-darwin-arm64": "1.0.0",
-    "ossuno-mcp-darwin-x64": "1.0.0"
+    "ossuno-mcp-darwin-arm64": "1.0.1",
+    "ossuno-mcp-darwin-x64": "1.0.1"
   },
   "engines": {
     "node": ">=18"

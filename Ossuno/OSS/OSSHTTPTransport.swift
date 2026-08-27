@@ -29,12 +29,26 @@ struct URLSessionOSSHTTPTransport: OSSHTTPTransport {
         self.session = session
     }
 
-    private static let liveSession: URLSession = {
+    /// Signed OSS requests must not be forwarded. A redirect can change the
+    /// signed host or path and leak `Authorization` / `x-oss-security-token`.
+    static func makeSession(
+        configuration: URLSessionConfiguration = liveConfiguration
+    ) -> URLSession {
+        URLSession(
+            configuration: configuration,
+            delegate: OSSRedirectRejectingDelegate(),
+            delegateQueue: nil
+        )
+    }
+
+    private static var liveConfiguration: URLSessionConfiguration {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.urlCache = nil
-        return URLSession(configuration: configuration)
-    }()
+        return configuration
+    }
+
+    private static let liveSession = makeSession()
 
     func send(
         _ request: URLRequest,
@@ -92,7 +106,22 @@ struct URLSessionOSSHTTPTransport: OSSHTTPTransport {
     }
 }
 
-private final class OSSProgressMonitor: NSObject, URLSessionTaskDelegate, URLSessionDownloadDelegate, @unchecked Sendable {
+/// Task-level `data(for:delegate:)` / `download(for:delegate:)` replace the
+/// session delegate for that request, so progress monitors must reject
+/// redirects themselves.
+class OSSRedirectRejectingDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
+    }
+}
+
+private final class OSSProgressMonitor: OSSRedirectRejectingDelegate, URLSessionDownloadDelegate, @unchecked Sendable {
     let handler: @Sendable (Int64, Int64) -> Void
 
     init(_ handler: @escaping @Sendable (Int64, Int64) -> Void) {

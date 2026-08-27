@@ -55,6 +55,7 @@ final class AppModel {
     var searchScope: BucketSearchScope = .folder
     var searchFilter: BucketSearchFilter = .all
     var searchController = BucketSearchController()
+    var searchSelectedKeys: Set<String> = []
 
     var showInspector = false
     var objectPropertiesModel: ObjectPropertiesModel?
@@ -94,6 +95,7 @@ final class AppModel {
     private var ownedPreviewURLs: Set<URL> = []
     var overwritePrompt: OverwritePrompt?
     private var uploadGeneration = 0
+    private var previewGeneration = 0
     private var didLoadWindow = false
     private var listingRefreshTask: Task<Void, Never>?
     private var listingLoadTask: Task<ObjectListing, Error>?
@@ -265,7 +267,7 @@ final class AppModel {
     }
 
     private func selectBucket(_ bucket: OSSBucket, prefix: String) {
-        searchController.clear()
+        clearBucketSearch()
         invalidateListingAndInspectorRequests()
         selectedBucketName = bucket.name
         lastBucketName = bucket.name
@@ -412,13 +414,168 @@ final class AppModel {
         }
     }
 
+    var isBucketSearchActive: Bool {
+        guard searchScope == .bucket else { return false }
+        let text = browser.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !text.isEmpty || searchFilter != .all
+    }
+
+    /// Folder-scope typing must still reveal the scope picker; Bucket search
+    /// and the large-file filter live in that chrome.
+    var showsSearchChrome: Bool {
+        selectedBucket != nil && (
+            searchScope == .bucket
+            || !browser.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || searchFilter != .all
+        )
+    }
+
+    var searchVisibleKeys: Set<String> {
+        Set(searchController.results.map(\.key))
+    }
+
+    var searchSelectedObjects: [OSSObject] {
+        searchController.results.filter { searchSelectedKeys.contains($0.key) }
+    }
+
+    var actionableSelectionKeys: Set<String> {
+        isBucketSearchActive ? searchSelectedKeys : browser.actionableSelectionKeys
+    }
+
+    var actionableObjects: [OSSObject] {
+        isBucketSearchActive ? searchSelectedObjects : browser.selectedObjects
+    }
+
+    var actionableFolders: [OSSFolder] {
+        isBucketSearchActive ? [] : browser.selectedFolders
+    }
+
+    func selectSearchKeys(_ keys: Set<String>) {
+        searchSelectedKeys = keys.intersection(searchVisibleKeys)
+    }
+
+    func selectAllVisible() {
+        if isBucketSearchActive {
+            searchSelectedKeys = searchVisibleKeys
+        } else {
+            browser.selectAllVisible()
+        }
+    }
+
+    func clearVisibleSelection() {
+        if isBucketSearchActive {
+            searchSelectedKeys = []
+        } else {
+            browser.clearSelection()
+        }
+    }
+
+    func object(forKey key: String) -> OSSObject? {
+        if isBucketSearchActive {
+            return searchController.results.first(where: { $0.key == key })
+        }
+        return browser.visibleObjects.first(where: { $0.key == key })
+            ?? browser.objects.first(where: { $0.key == key })
+    }
+
+    func openVisibleItem(id: String) {
+        if isBucketSearchActive {
+            if let object = object(forKey: id) {
+                Task { await openSearchResult(object) }
+            }
+            return
+        }
+        if let folder = browser.folders.first(where: { $0.prefix == id }) {
+            openFolder(folder)
+            return
+        }
+        selectForContextMenu(id)
+        Task { await quickLookSelection() }
+    }
+
+    func selectForContextMenu(_ key: String) {
+        if isBucketSearchActive {
+            if searchVisibleKeys.contains(key), !searchSelectedKeys.contains(key) {
+                searchSelectedKeys = [key]
+            }
+            return
+        }
+        browser.selectForContextMenu(key: key)
+    }
+
+    func menuActionKeys(clickedKey: String) -> Set<String> {
+        if actionableSelectionKeys.contains(clickedKey) {
+            return actionableSelectionKeys
+        }
+        return [clickedKey]
+    }
+
+    func deleteMenuTitle(clickedKey: String) -> String {
+        let keys = menuActionKeys(clickedKey: clickedKey)
+        if keys.count > 1 {
+            return "删除 \(keys.count) 项"
+        }
+        if !isBucketSearchActive, browser.folders.contains(where: { $0.prefix == clickedKey }) {
+            return "删除文件夹"
+        }
+        return "删除"
+    }
+
+    func downloadMenuTitle(clickedKey: String) -> String {
+        let keys = menuActionKeys(clickedKey: clickedKey)
+        if !isBucketSearchActive {
+            let files = browser.objects.filter { keys.contains($0.key) }.count
+            let folders = browser.folders.filter { keys.contains($0.prefix) }.count
+            if folders == 1 && files == 0 && keys.count == 1 {
+                return "下载文件夹"
+            }
+            if files + folders > 1 {
+                return "下载 \(files + folders) 项"
+            }
+        } else if keys.count > 1 {
+            return "下载 \(keys.count) 项"
+        }
+        return "下载"
+    }
+
+    func requestRename(key: String) {
+        guard !isOrganizingCloud else { return }
+        if isBucketSearchActive,
+           let object = searchController.results.first(where: { $0.key == key }) {
+            Task { @MainActor in
+                await openSearchResult(object)
+                if !browser.beginRenaming(key: key) {
+                    present("无法重命名这个项目，请打开所在文件夹后再试", error: true)
+                }
+            }
+            return
+        }
+        Task { @MainActor in
+            await Task.yield()
+            if !browser.beginRenaming(key: key) {
+                present("无法重命名这个项目", error: true)
+            }
+        }
+    }
+
+    func requestRenameSelection() {
+        if isBucketSearchActive {
+            guard searchSelectedObjects.count == 1, let object = searchSelectedObjects.first else { return }
+            requestRename(key: object.key)
+            return
+        }
+        guard !isOrganizingCloud else { return }
+        guard browser.selectedKeys.count == 1, let key = browser.selectedKeys.first else { return }
+        requestRename(key: key)
+    }
+
     func runBucketSearch(now: Date = .now) async {
         guard searchScope == .bucket,
               let accountID = selectedAccountID,
               let bucketName = selectedBucketName,
               let client = makeClient()
         else {
-            searchController.clear()
+            clearBucketSearch()
             return
         }
         let query = BucketSearchQuery(
@@ -430,16 +587,22 @@ final class AppModel {
         await searchController.search(query: query, now: now) { token in
             try await client.listObjectPage(prefix: "", token: token)
         }
+        selectSearchKeys(searchSelectedKeys)
     }
 
     func cancelBucketSearch() {
         searchController.cancel()
     }
 
+    func clearBucketSearch() {
+        searchController.clear()
+        searchSelectedKeys = []
+    }
+
     func openSearchResult(_ object: OSSObject) async {
         searchScope = .folder
         browser.searchText = ""
-        searchController.clear()
+        clearBucketSearch()
         invalidateListingAndInspectorRequests()
         browser.navigate(to: PathTemplate.parentPrefix(object.key))
         browser.revealObjectTemporarily(object.key)
@@ -965,7 +1128,7 @@ final class AppModel {
     }
 
     func requestDeleteSelection() {
-        requestDeleteSelection(keys: browser.actionableSelectionKeys)
+        requestDeleteSelection(keys: actionableSelectionKeys)
     }
 
     func requestDeleteSelection(keys: Set<String>, deferConfirmation: Bool = false) {
@@ -973,12 +1136,18 @@ final class AppModel {
             present("请等待当前云端整理完成", error: true)
             return
         }
-        // Restrict to what the browser actually shows and what deleteSelection
-        // will act on, so the confirmation dialog never over-counts.
-        let known = Set(keys.filter { browser.visibleKeys.contains($0) })
+        // Restrict to what the current view actually shows and what
+        // deleteSelection will act on, so the confirmation dialog never
+        // over-counts hidden folder items during Bucket search.
+        let visible = isBucketSearchActive ? searchVisibleKeys : browser.visibleKeys
+        let known = Set(keys.filter(visible.contains))
         guard !known.isEmpty else { return }
         pendingDeleteKeys = known
-        browser.replaceSelection(known)
+        if isBucketSearchActive {
+            searchSelectedKeys = known
+        } else {
+            browser.replaceSelection(known)
+        }
         if deferConfirmation {
             DispatchQueue.main.async { [weak self] in
                 self?.wantsDeleteConfirmation = true
@@ -993,11 +1162,15 @@ final class AppModel {
     }
 
     private var deleteTargetFolders: [OSSFolder] {
-        browser.folders.filter { pendingDeleteKeys.contains($0.prefix) }
+        if isBucketSearchActive { return [] }
+        return browser.folders.filter { pendingDeleteKeys.contains($0.prefix) }
     }
 
     private var deleteTargetObjects: [OSSObject] {
-        browser.objects.filter { pendingDeleteKeys.contains($0.key) }
+        if isBucketSearchActive {
+            return searchController.results.filter { pendingDeleteKeys.contains($0.key) }
+        }
+        return browser.objects.filter { pendingDeleteKeys.contains($0.key) }
     }
 
     var deleteDialogTitle: String {
@@ -1078,9 +1251,20 @@ final class AppModel {
               let accountID = selectedAccountID,
               let bucketName = selectedBucketName
         else { return }
-        let selectedKeys = pendingDeleteKeys.isEmpty ? browser.actionableSelectionKeys : pendingDeleteKeys
+        let pending = pendingDeleteKeys
         pendingDeleteKeys = []
-        let keys = browser.orderedVisibleKeys.filter(selectedKeys.contains)
+        let keys: [String]
+        if !pending.isEmpty {
+            // The confirmation already captured a visible, user-approved set.
+            // Do not re-intersect with a search that may have restarted empty.
+            keys = isBucketSearchActive
+                ? pending.sorted()
+                : browser.orderedVisibleKeys.filter(pending.contains)
+        } else if isBucketSearchActive {
+            keys = searchController.results.map(\.key).filter(actionableSelectionKeys.contains)
+        } else {
+            keys = browser.orderedVisibleKeys.filter(actionableSelectionKeys.contains)
+        }
         guard !keys.isEmpty else { return }
         let previousCloudUndo = lastCloudUndoOperation
         let previousDeleteUndo = lastDeleteUndoOperation
@@ -1304,21 +1488,26 @@ final class AppModel {
     }
 
     func cloudDragPayload(clickedKey: String) -> CloudDragPayload {
-        let actionableKeys = browser.actionableSelectionKeys
-        let keys: Set<String>
-        if actionableKeys.contains(clickedKey) {
-            keys = actionableKeys
-        } else if browser.visibleKeys.contains(clickedKey) {
-            keys = [clickedKey]
-        } else {
-            keys = []
+        let keys = menuActionKeys(clickedKey: clickedKey)
+        if isBucketSearchActive {
+            let visible = searchVisibleKeys
+            let resolved = keys.filter(visible.contains)
+            return CloudDragPayload(
+                accountID: selectedAccountID ?? UUID(),
+                bucketName: selectedBucketName ?? "",
+                sourceRegionID: selectedBucket?.regionID ?? selectedAccount?.regionID,
+                objectKeys: searchController.results.filter { resolved.contains($0.key) }.map(\.key),
+                folderPrefixes: []
+            )
         }
+        let visible = browser.visibleKeys
+        let resolved = keys.filter(visible.contains)
         return CloudDragPayload(
             accountID: selectedAccountID ?? UUID(),
             bucketName: selectedBucketName ?? "",
             sourceRegionID: selectedBucket?.regionID ?? selectedAccount?.regionID,
-            objectKeys: browser.visibleObjects.filter { keys.contains($0.key) }.map(\.key),
-            folderPrefixes: browser.visibleFolders.filter { keys.contains($0.prefix) }.map(\.prefix)
+            objectKeys: browser.visibleObjects.filter { resolved.contains($0.key) }.map(\.key),
+            folderPrefixes: browser.visibleFolders.filter { resolved.contains($0.prefix) }.map(\.prefix)
         )
     }
 
@@ -1352,17 +1541,21 @@ final class AppModel {
     }
 
     func noteBucketMutated(accountID: UUID? = nil, bucketName: String? = nil) {
-        if let accountID, let bucketName {
-            searchController.invalidate(accountID: accountID, bucketName: bucketName)
-            return
+        let account = accountID ?? selectedAccountID
+        let bucket = bucketName ?? selectedBucketName
+        if let account, let bucket {
+            searchController.invalidate(accountID: account, bucketName: bucket)
         }
-        if let selectedAccountID, let selectedBucketName {
-            searchController.invalidate(accountID: selectedAccountID, bucketName: selectedBucketName)
+        let touchesCurrent =
+            (accountID == nil || accountID == selectedAccountID)
+            && (bucketName == nil || bucketName == selectedBucketName)
+        if touchesCurrent, isBucketSearchActive {
+            Task { await runBucketSearch() }
         }
     }
 
     var canCopyCloudItems: Bool {
-        !browser.actionableSelectionKeys.isEmpty
+        !actionableSelectionKeys.isEmpty
     }
 
     var resolvedClipboardItem: CloudClipboardItem? {
@@ -1382,7 +1575,7 @@ final class AppModel {
     }
 
     var canPasteCloudItems: Bool {
-        resolvedClipboardItem != nil || cloudClipboard != nil
+        resolvedClipboardItem != nil
     }
 
     var canPaste: Bool {
@@ -1411,9 +1604,7 @@ final class AppModel {
 
     func paste(into destinationPrefix: String? = nil) {
         let destination = destinationPrefix ?? browser.prefix
-        if let item = resolvedClipboardItem
-            ?? cloudClipboard.map({ CloudClipboardItem(payload: $0, mode: cloudClipboardMode) })
-        {
+        if let item = resolvedClipboardItem {
             if item.mode == .move,
                CloudObjectOperation.staysInPlace(
                 objectKeys: item.payload.objectKeys,
@@ -1449,7 +1640,7 @@ final class AppModel {
 
     private func rememberSelectionOnClipboard(clickedKey: String?, mode: CloudOperationMode) {
         let key = clickedKey
-            ?? browser.actionableSelectionKeys.sorted().first
+            ?? actionableSelectionKeys.sorted().first
             ?? ""
         let payload = cloudDragPayload(clickedKey: key)
         guard !payload.isEmpty else { return }
@@ -2618,11 +2809,19 @@ final class AppModel {
     }
 
     func downloadSelection() {
-        let objects = browser.selectedObjects
-        let folders = browser.selectedFolders
+        let objects = actionableObjects
+        let folders = actionableFolders
         guard !objects.isEmpty || !folders.isEmpty else { return }
         guard let dest = chooseDownloadDirectory() else { return }
-        Task { await startDownloads(objects: objects, folders: folders, to: dest) }
+        let preserveObjectKeyPath = isBucketSearchActive
+        Task {
+            await startDownloads(
+                objects: objects,
+                folders: folders,
+                to: dest,
+                preserveObjectKeyPath: preserveObjectKeyPath
+            )
+        }
     }
 
     func downloadFolder(_ folder: OSSFolder) {
@@ -2652,11 +2851,16 @@ final class AppModel {
         return panel.url
     }
 
+    func downloadRelativePath(for object: OSSObject, preserveKeyPath: Bool) -> String {
+        preserveKeyPath ? PathTemplate.sanitizeKey(object.key) : object.name
+    }
+
     func startDownloads(
         objects: [OSSObject],
         folders: [OSSFolder],
         to dest: URL,
-        extraPrefix: (prefix: String, folderName: String)? = nil
+        extraPrefix: (prefix: String, folderName: String)? = nil,
+        preserveObjectKeyPath: Bool = false
     ) async {
         guard let account = selectedAccount,
               let bucket = selectedBucket,
@@ -2667,7 +2871,10 @@ final class AppModel {
         for object in objects {
             let url: URL
             do {
-                url = try FileSafety.destination(root: dest, relativePath: object.name)
+                url = try FileSafety.destination(
+                    root: dest,
+                    relativePath: downloadRelativePath(for: object, preserveKeyPath: preserveObjectKeyPath)
+                )
             } catch {
                 skippedUnsafe += 1
                 continue
@@ -2810,7 +3017,7 @@ final class AppModel {
         guard let account = selectedAccount, let bucket = selectedBucket else { return }
         let client = account.prefersSignedLinks ? makeClient() : nil
         var usedSigned = false
-        let urls = browser.selectedObjects.compactMap { object -> String? in
+        let urls = actionableObjects.compactMap { object -> String? in
             let resolved: URL?
             if let client,
                let signed = client.presignedURL(
@@ -2838,8 +3045,12 @@ final class AppModel {
         present(usedSigned ? "已复制签名链接，\(settings.signedLinkLifetime.title)内有效" : "已复制 \(urls.count) 条链接")
     }
 
+    var inspectorObject: OSSObject? {
+        isBucketSearchActive ? searchSelectedObjects.first : browser.primarySelection
+    }
+
     func loadInspector() async {
-        guard let object = browser.primarySelection, let client = makeClient() else {
+        guard let object = inspectorObject, let client = makeClient() else {
             inspectorLoadTask?.cancel()
             inspectorRequestGate.invalidate()
             inspectorHead = nil
@@ -2870,7 +3081,7 @@ final class AppModel {
         do {
             let (head, text) = try await task.value
             guard inspectorRequestGate.canCommit(context),
-                  browser.primarySelection?.key == context.objectKey
+                  inspectorObject?.key == context.objectKey
             else { return }
             inspectorHead = head
             inspectorText = text
@@ -2889,11 +3100,12 @@ final class AppModel {
     }
 
     func quickLookSelection() async {
-        let objects = browser.selectedObjects
+        let objects = actionableObjects
         if let object = objects.first, objects.count == 1 {
             await quickLook(object)
             return
         }
+        guard !isBucketSearchActive else { return }
         // Space with only a single folder selected opens it (folders have no
         // QuickLook payload); this matches the double-click behavior in both
         // grid and list views.
@@ -2905,6 +3117,8 @@ final class AppModel {
 
     func quickLook(_ object: OSSObject) async {
         guard let client = makeClient() else { return }
+        previewGeneration += 1
+        let generation = previewGeneration
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "OssunoQuickLook", directoryHint: .isDirectory)
         let name = (try? ObjectNameValidator.validate(object.name)) ?? "预览文件"
@@ -2916,8 +3130,13 @@ final class AppModel {
                 relativePath: "\(UUID().uuidString)-\(name)"
             )
             try await client.download(key: object.key, to: dest, within: directory)
+            guard generation == previewGeneration else {
+                try? FileManager.default.removeItem(at: dest)
+                return
+            }
             presentPreview(at: dest)
         } catch {
+            guard generation == previewGeneration else { return }
             present(error.localizedDescription, error: true)
         }
     }
@@ -3018,7 +3237,7 @@ final class AppModel {
     }
 
     private func invalidateAllBrowserRequests() {
-        searchController.clear()
+        clearBucketSearch()
         bucketLoadTask?.cancel()
         bucketLoadTask = nil
         bucketRequestGate.invalidate()

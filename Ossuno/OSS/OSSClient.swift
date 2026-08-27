@@ -1479,7 +1479,7 @@ struct OSSClient: Sendable {
             query.append(("x-oss-process", process))
         }
         let response = try await perform(method: "GET", bucket: bucket, key: key, query: query)
-        if process == nil {
+        if (process ?? "").isEmpty {
             _ = try Self.verifyCRC64(
                 local: CRC64XZ.checksum(response.data),
                 headers: response.headers
@@ -1818,12 +1818,7 @@ struct OSSClient: Sendable {
     }
 
     private func completeXML(parts: [MultipartCompletedPart]) -> Data {
-        var xml = "<CompleteMultipartUpload>"
-        for part in parts.sorted(by: { $0.number < $1.number }) {
-            xml += "<Part><PartNumber>\(part.number)</PartNumber><ETag>\"\(part.etag)\"</ETag></Part>"
-        }
-        xml += "</CompleteMultipartUpload>"
-        return Data(xml.utf8)
+        OSSXML.completeMultipartUploadXML(parts: parts.map { (number: $0.number, etag: $0.etag) })
     }
 
     // MARK: - Transport
@@ -1984,6 +1979,19 @@ struct OSSClient: Sendable {
                     try await retrySleeper.sleep(for: delay)
                     attempt += 1
                     continue
+                }
+
+                if (300...399).contains(result.status) {
+                    if let temporaryURL = result.temporaryDownloadURL {
+                        try? FileManager.default.removeItem(at: temporaryURL)
+                    }
+                    let location = result.headers.value("Location") ?? "（未提供 Location）"
+                    throw OSSServiceError(
+                        statusCode: result.status,
+                        code: "RedirectRejected",
+                        message: "OSS 签名请求拒绝自动重定向：\(location)。请直接配置最终 Endpoint。",
+                        requestId: result.headers.value("x-oss-request-id") ?? ""
+                    )
                 }
 
                 let http: HTTPResponse

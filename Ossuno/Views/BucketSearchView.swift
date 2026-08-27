@@ -2,7 +2,6 @@ import SwiftUI
 
 struct BucketSearchView: View {
     @Environment(AppModel.self) private var model
-    @State private var selection: Set<String> = []
 
     var body: some View {
         // Table cells are hosted by AppKit; capture the model reference up
@@ -21,19 +20,31 @@ struct BucketSearchView: View {
                         .buttonStyle(.borderless)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contextMenu { searchBackgroundMenu(modelRef) }
             } else if modelRef.searchController.results.isEmpty && !modelRef.searchController.isSearching {
                 Text("没有匹配的项目")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contextMenu { searchBackgroundMenu(modelRef) }
             } else {
                 resultsTable(modelRef)
+                    .overlay {
+                        BrowserBackgroundMenuOverlay(
+                            actions: .live(
+                                model: modelRef,
+                                kind: .bucketSearch,
+                                showFileImporter: {}
+                            )
+                        )
+                        .allowsHitTesting(false)
+                    }
             }
         }
         .background(Color(nsColor: .controlBackgroundColor))
     }
 
     private func resultsTable(_ modelRef: AppModel) -> some View {
-        Table(of: OSSObject.self, selection: $selection) {
+        Table(of: OSSObject.self, selection: searchSelection(modelRef)) {
             TableColumn("名称") { object in
                 HStack(spacing: 6) {
                     if object.isImage {
@@ -48,8 +59,14 @@ struct BucketSearchView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
-                .onTapGesture(count: 2) {
-                    Task { await modelRef.openSearchResult(object) }
+                .onDrag {
+                    modelRef.finderItemProvider(clickedKey: object.key)
+                } preview: {
+                    Label(object.name, systemImage: object.isImage ? "photo" : "doc")
+                        .lineLimit(1)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(.bar, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
             }
             TableColumn("位置") { object in
@@ -71,12 +88,25 @@ struct BucketSearchView: View {
         } rows: {
             ForEach(modelRef.searchController.results) { object in
                 TableRow(object)
-                    .contextMenu {
-                        Button("快速查看") { Task { await modelRef.quickLook(object) } }
-                        Button("显示所在文件夹") { Task { await modelRef.openSearchResult(object) } }
-                    }
             }
         }
+    }
+
+    private func searchSelection(_ modelRef: AppModel) -> Binding<Set<String>> {
+        Binding(
+            get: { modelRef.searchSelectedKeys },
+            set: { modelRef.selectSearchKeys($0) }
+        )
+    }
+
+    @ViewBuilder
+    private func searchBackgroundMenu(_ modelRef: AppModel) -> some View {
+        Button("全选") { modelRef.selectAllVisible() }
+        if !modelRef.searchSelectedKeys.isEmpty {
+            Button("取消选择") { modelRef.clearVisibleSelection() }
+        }
+        Divider()
+        Button("再试一次") { Task { await modelRef.runBucketSearch() } }
     }
 
     private func location(_ modelRef: AppModel, of object: OSSObject) -> String {
@@ -107,36 +137,41 @@ struct BucketSearchFilterMenu: View {
                 }
             }
             Section("大小") {
-                filterButton("任意大小", minimum: nil, maximum: nil)
-                filterButton("大于 10 MB", minimum: 10 * 1_024 * 1_024, maximum: nil)
-                filterButton("大于 100 MB", minimum: 100 * 1_024 * 1_024, maximum: nil)
-                filterButton("小于 1 MB", minimum: nil, maximum: 1 * 1_024 * 1_024)
+                filterButton(modelRef, "任意大小", minimum: nil, maximum: nil)
+                filterButton(modelRef, "大于 10 MB", minimum: 10 * 1_024 * 1_024, maximum: nil)
+                filterButton(modelRef, "大于 100 MB", minimum: 100 * 1_024 * 1_024, maximum: nil)
+                filterButton(modelRef, "小于 1 MB", minimum: nil, maximum: 1 * 1_024 * 1_024)
             }
             Section("修改时间") {
-                dateButton("任意时间", range: .any)
-                dateButton("最近 24 小时", range: .lastDays(1))
-                dateButton("最近 7 天", range: .lastDays(7))
-                dateButton("最近 30 天", range: .lastDays(30))
+                dateButton(modelRef, "任意时间", range: .any)
+                dateButton(modelRef, "最近 24 小时", range: .lastDays(1))
+                dateButton(modelRef, "最近 7 天", range: .lastDays(7))
+                dateButton(modelRef, "最近 30 天", range: .lastDays(30))
             }
-            if model.searchFilter != .all {
+            if modelRef.searchFilter != .all {
                 Divider()
-                Button("清除筛选") { model.searchFilter = .all }
+                Button("清除筛选") { modelRef.searchFilter = .all }
             }
         } label: {
-            Label("筛选", systemImage: model.searchFilter == .all ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
+            Label("筛选", systemImage: modelRef.searchFilter == .all ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
         .help("筛选搜索结果")
     }
 
-    private func filterButton(_ title: String, minimum: Int64?, maximum: Int64?) -> some View {
+    private func filterButton(
+        _ modelRef: AppModel,
+        _ title: String,
+        minimum: Int64?,
+        maximum: Int64?
+    ) -> some View {
         Button {
-            model.searchFilter.minimumSize = minimum
-            model.searchFilter.maximumSize = maximum
+            modelRef.searchFilter.minimumSize = minimum
+            modelRef.searchFilter.maximumSize = maximum
         } label: {
-            if model.searchFilter.minimumSize == minimum,
-               model.searchFilter.maximumSize == maximum {
+            if modelRef.searchFilter.minimumSize == minimum,
+               modelRef.searchFilter.maximumSize == maximum {
                 Label(title, systemImage: "checkmark")
             } else {
                 Text(title)
@@ -144,11 +179,15 @@ struct BucketSearchFilterMenu: View {
         }
     }
 
-    private func dateButton(_ title: String, range: BucketSearchDateRange) -> some View {
+    private func dateButton(
+        _ modelRef: AppModel,
+        _ title: String,
+        range: BucketSearchDateRange
+    ) -> some View {
         Button {
-            model.searchFilter.modified = range
+            modelRef.searchFilter.modified = range
         } label: {
-            if model.searchFilter.modified == range {
+            if modelRef.searchFilter.modified == range {
                 Label(title, systemImage: "checkmark")
             } else {
                 Text(title)

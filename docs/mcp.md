@@ -31,7 +31,7 @@
 
 ## 安装
 
-[`ossuno-mcp` 1.0.0](https://www.npmjs.com/package/ossuno-mcp) 已发布到 npm。需要 macOS 与 Node.js 18 或更高版本；`npx` 会按 Mac 架构下载 arm64 或 x64 预编译二进制。
+[`ossuno-mcp`](https://www.npmjs.com/package/ossuno-mcp) 已发布到 npm。需要 macOS 与 Node.js 18 或更高版本；`npx` 会按 Mac 架构下载 arm64 或 x64 预编译二进制。
 
 ### 第一步：配置凭证
 

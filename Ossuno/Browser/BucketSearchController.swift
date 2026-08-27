@@ -188,6 +188,9 @@ final class BucketSearchController {
     }
 
     private func store(_ snapshot: BucketSearchSnapshot) {
+        // Incomplete scans (page/object caps, repeated tokens) must not be
+        // reused: a later identical query should try the bucket again.
+        guard !snapshot.isIncomplete else { return }
         accessCounter &+= 1
         cache[snapshot.query] = CacheEntry(snapshot: snapshot, lastAccess: accessCounter)
         guard cache.count > Self.maximumCacheEntries,

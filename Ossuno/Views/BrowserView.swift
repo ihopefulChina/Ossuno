@@ -92,8 +92,8 @@ struct BrowserView: View {
             #if DEBUG
             if ScreenshotDemo.currentMode == .browser { return }
             #endif
-            guard isBucketSearchPresented else {
-                modelRef.searchController.clear()
+            guard modelRef.isBucketSearchActive else {
+                modelRef.clearBucketSearch()
                 return
             }
             do {
@@ -126,7 +126,7 @@ struct BrowserView: View {
             Text("在左侧选择一个存储空间")
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if isBucketSearchPresented {
+        } else if modelRef.isBucketSearchActive {
             BucketSearchView()
         } else if modelRef.browser.isLoading && modelRef.browser.objects.isEmpty && modelRef.browser.folders.isEmpty {
             ProgressView()
@@ -154,7 +154,7 @@ struct BrowserView: View {
     }
 
     private var title: String {
-        if isBucketSearchPresented {
+        if model.isBucketSearchActive {
             return model.selectedBucket?.name ?? "搜索"
         }
         if model.browser.prefix.isEmpty {
@@ -164,7 +164,7 @@ struct BrowserView: View {
     }
 
     private var subtitle: String {
-        if isBucketSearchPresented {
+        if model.isBucketSearchActive {
             let progress = model.searchController.progress
             return model.searchController.isSearching
                 ? "正在搜索当前 Bucket"
@@ -182,13 +182,8 @@ struct BrowserView: View {
         model.searchScope == .folder ? "搜索当前文件夹" : "搜索当前 Bucket"
     }
 
-    private var isSearching: Bool {
-        !model.browser.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || model.searchFilter != .all
-    }
-
     private var showsSearchChrome: Bool {
-        model.selectedBucket != nil && (isSearching || model.searchScope == .bucket)
+        model.showsSearchChrome
     }
 
     private var searchScopeBar: some View {
@@ -214,7 +209,7 @@ struct BrowserView: View {
                     Button("停止") { model.cancelBucketSearch() }
                         .buttonStyle(.borderless)
                         .controlSize(.small)
-                } else if isBucketSearchPresented {
+                } else if model.isBucketSearchActive {
                     Text(model.searchController.snapshot?.isIncomplete == true
                          ? "找到 \(model.searchController.progress.matched) 项，结果可能不完整"
                          : "找到 \(model.searchController.progress.matched) 项")
@@ -234,12 +229,6 @@ struct BrowserView: View {
         .frame(height: 28)
         .background(.bar)
         .overlay(alignment: .bottom) { Divider() }
-    }
-
-    private var isBucketSearchPresented: Bool {
-        guard model.searchScope == .bucket else { return false }
-        let text = model.browser.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !text.isEmpty || model.searchFilter != .all
     }
 
     private var searchRequest: BucketSearchRequest {
@@ -480,74 +469,10 @@ struct BrowserView: View {
 
     private func backgroundMenuOverlay(_ modelRef: AppModel) -> BrowserBackgroundMenuOverlay {
         BrowserBackgroundMenuOverlay(
-            actions: BrowserContextActions(
-                pasteTitle: modelRef.pasteMenuTitle,
-                pasteIntoFolderTitle: modelRef.pasteIntoFolderTitle,
-                canPaste: { modelRef.canPaste },
-                hasCloudClipboard: { modelRef.canPasteCloudItems },
-                canDeselect: !modelRef.browser.selectedKeys.isEmpty,
-                isOrganizing: modelRef.isOrganizingCloud,
-                tableItemIDs: tableRows.map(\.id),
-                viewMode: modelRef.browser.viewMode,
-                selectedKeys: { modelRef.browser.selectedKeys },
-                isFavorite: { prefix in modelRef.isFavorite(prefix: prefix) },
-                deleteTitle: { deleteTitle(modelRef, clickedKey: $0) },
-                downloadTitle: { downloadTitle(modelRef, clickedKey: $0) },
-                onHighlight: { selectForMenu(modelRef, $0) },
-                onSelectItem: { key, modifiers in
-                    modelRef.browser.select(key: key, modifiers: modifiers)
-                },
-                onBackgroundClick: { modelRef.browser.clearSelection() },
-                onOpenItem: { openItem(modelRef, id: $0) },
-                onPaste: { modelRef.paste() },
-                onPasteInto: { modelRef.paste(into: $0) },
-                onUpload: { showFileImporter = true },
-                onPasteLocal: { modelRef.pasteFromClipboard() },
-                onNewFolder: { modelRef.wantsNewFolder = true },
-                onDownloadCurrent: { modelRef.downloadCurrentPrefix() },
-                onRefresh: { Task { await modelRef.refreshListing() } },
-                onSelectAll: { modelRef.browser.selectAllVisible() },
-                onDeselect: { modelRef.browser.clearSelection() },
-                onOpenFolder: { prefix in
-                    if let folder = modelRef.browser.folders.first(where: { $0.prefix == prefix }) {
-                        modelRef.openFolder(folder)
-                    }
-                },
-                onQuickLook: { key in
-                    selectForMenu(modelRef, key)
-                    Task { await modelRef.quickLookSelection() }
-                },
-                onCopy: { modelRef.copyCloudSelection(clickedKey: $0) },
-                onCut: { modelRef.cutCloudSelection(clickedKey: $0) },
-                onRename: { beginRenaming(modelRef, key: $0) },
-                onDelete: { key in
-                    modelRef.requestDeleteSelection(
-                        keys: menuActionKeys(modelRef, clickedKey: key),
-                        deferConfirmation: true
-                    )
-                },
-                onDownload: { key in
-                    selectForMenu(modelRef, key)
-                    modelRef.downloadSelection()
-                },
-                onToggleFavorite: { prefix in
-                    if let folder = modelRef.browser.folders.first(where: { $0.prefix == prefix }) {
-                        modelRef.toggleFavorite(prefix: prefix, name: folder.name)
-                    }
-                },
-                onCopyLink: { key in
-                    selectForMenu(modelRef, key)
-                    modelRef.copyURLs(style: .plain)
-                },
-                onCopyMarkdown: { key in
-                    selectForMenu(modelRef, key)
-                    modelRef.copyURLs(style: .markdown)
-                },
-                onObjectProperties: { key in
-                    if let object = modelRef.browser.objects.first(where: { $0.key == key }) {
-                        modelRef.presentObjectProperties(for: object)
-                    }
-                }
+            actions: .live(
+                model: modelRef,
+                kind: .folderListing,
+                showFileImporter: { showFileImporter = true }
             )
         )
     }
@@ -564,9 +489,9 @@ struct BrowserView: View {
         Button("下载当前文件夹") { modelRef.downloadCurrentPrefix() }
         Button("刷新") { Task { await modelRef.refreshListing() } }
         Divider()
-        Button("全选") { modelRef.browser.selectAllVisible() }
+        Button("全选") { modelRef.selectAllVisible() }
         if !modelRef.browser.selectedKeys.isEmpty {
-            Button("取消选择") { modelRef.browser.clearSelection() }
+            Button("取消选择") { modelRef.clearVisibleSelection() }
         }
     }
 
@@ -575,10 +500,10 @@ struct BrowserView: View {
         Button("打开") {
             modelRef.openFolder(folder)
         }
-        .onAppear { selectForMenu(modelRef, folder.prefix) }
-        Button(deleteTitle(modelRef, clickedKey: folder.prefix), role: .destructive) {
+        .onAppear { modelRef.selectForContextMenu(folder.prefix) }
+        Button(modelRef.deleteMenuTitle(clickedKey: folder.prefix), role: .destructive) {
             modelRef.requestDeleteSelection(
-                keys: menuActionKeys(modelRef, clickedKey: folder.prefix),
+                keys: modelRef.menuActionKeys(clickedKey: folder.prefix),
                 deferConfirmation: true
             )
         }
@@ -587,16 +512,16 @@ struct BrowserView: View {
         Button(modelRef.isFavorite(prefix: folder.prefix) ? "从常用中移除" : "添加到常用") {
             modelRef.toggleFavorite(prefix: folder.prefix, name: folder.name)
         }
-        Button(downloadTitle(modelRef, clickedKey: folder.prefix)) {
-            selectForMenu(modelRef, folder.prefix)
+        Button(modelRef.downloadMenuTitle(clickedKey: folder.prefix)) {
+            modelRef.selectForContextMenu(folder.prefix)
             modelRef.downloadSelection()
         }
         Button("复制") {
-            selectForMenu(modelRef, folder.prefix)
+            modelRef.selectForContextMenu(folder.prefix)
             modelRef.copyCloudSelection(clickedKey: folder.prefix)
         }
         Button("剪切") {
-            selectForMenu(modelRef, folder.prefix)
+            modelRef.selectForContextMenu(folder.prefix)
             modelRef.cutCloudSelection(clickedKey: folder.prefix)
         }
         Button(modelRef.pasteIntoFolderTitle) {
@@ -604,107 +529,14 @@ struct BrowserView: View {
         }
         .disabled(!modelRef.canPaste)
         Button("重命名") {
-            beginRenaming(modelRef, key: folder.prefix)
+            modelRef.requestRename(key: folder.prefix)
         }
         .disabled(modelRef.isOrganizingCloud)
     }
 
     @ViewBuilder
     private func objectMenu(_ modelRef: AppModel, object: OSSObject) -> some View {
-        Button("快速查看") {
-            selectForMenu(modelRef, object.key)
-            Task { await modelRef.quickLookSelection() }
-        }
-        .onAppear { selectForMenu(modelRef, object.key) }
-        Button(deleteTitle(modelRef, clickedKey: object.key), role: .destructive) {
-            modelRef.requestDeleteSelection(
-                keys: menuActionKeys(modelRef, clickedKey: object.key),
-                deferConfirmation: true
-            )
-        }
-        .disabled(modelRef.isOrganizingCloud)
-        Divider()
-        Button("复制链接") {
-            selectForMenu(modelRef, object.key)
-            modelRef.copyURLs(style: .plain)
-        }
-        Button("复制 Markdown") {
-            selectForMenu(modelRef, object.key)
-            modelRef.copyURLs(style: .markdown)
-        }
-        Button("复制") {
-            selectForMenu(modelRef, object.key)
-            modelRef.copyCloudSelection(clickedKey: object.key)
-        }
-        Button("剪切") {
-            selectForMenu(modelRef, object.key)
-            modelRef.cutCloudSelection(clickedKey: object.key)
-        }
-        Button(modelRef.pasteMenuTitle) {
-            modelRef.paste()
-        }
-        .disabled(!modelRef.canPaste)
-        Button(downloadTitle(modelRef, clickedKey: object.key)) {
-            selectForMenu(modelRef, object.key)
-            modelRef.downloadSelection()
-        }
-        Button("重命名") {
-            beginRenaming(modelRef, key: object.key)
-        }
-        .disabled(modelRef.isOrganizingCloud)
-        Button("对象属性") {
-            selectForMenu(modelRef, object.key)
-            modelRef.presentObjectProperties(for: object)
-        }
-    }
-
-    private func selectForMenu(_ modelRef: AppModel, _ key: String) {
-        modelRef.browser.selectForContextMenu(key: key)
-    }
-
-    private func openItem(_ modelRef: AppModel, id: String) {
-        if let folder = modelRef.browser.folders.first(where: { $0.prefix == id }) {
-            modelRef.openFolder(folder)
-            return
-        }
-        selectForMenu(modelRef, id)
-        Task { await modelRef.quickLookSelection() }
-    }
-
-    private func menuActionKeys(_ modelRef: AppModel, clickedKey: String) -> Set<String> {
-        if modelRef.browser.selectedKeys.contains(clickedKey) {
-            return modelRef.browser.actionableSelectionKeys
-        }
-        return [clickedKey]
-    }
-
-    private func downloadTitle(_ modelRef: AppModel, clickedKey: String) -> String {
-        let keys: Set<String> = modelRef.browser.selectedKeys.contains(clickedKey)
-            ? modelRef.browser.selectedKeys
-            : [clickedKey]
-        let files = modelRef.browser.objects.filter { keys.contains($0.key) }.count
-        let folders = modelRef.browser.folders.filter { keys.contains($0.prefix) }.count
-        if folders == 1 && files == 0 && keys.count == 1 {
-            return "下载文件夹"
-        }
-        if files + folders > 1 {
-            return "下载 \(files + folders) 项"
-        }
-        return "下载"
-    }
-
-    private func deleteTitle(_ modelRef: AppModel, clickedKey: String) -> String {
-        let keys: Set<String> = modelRef.browser.selectedKeys.contains(clickedKey)
-            ? modelRef.browser.selectedKeys
-            : [clickedKey]
-        let count = keys.count
-        if count > 1 {
-            return "删除 \(count) 项"
-        }
-        if modelRef.browser.folders.contains(where: { $0.prefix == clickedKey }) {
-            return "删除文件夹"
-        }
-        return "删除"
+        BrowserObjectContextMenu(model: modelRef, object: object)
     }
 
     private func renameTextBinding(modelRef: AppModel) -> Binding<String> {
@@ -717,14 +549,6 @@ struct BrowserView: View {
     private func renameSession(modelRef: AppModel, for key: String) -> BrowserRenameSession? {
         guard modelRef.browser.renameSession?.key == key else { return nil }
         return modelRef.browser.renameSession
-    }
-
-    private func beginRenaming(_ modelRef: AppModel, key: String) {
-        guard !modelRef.isOrganizingCloud else { return }
-        Task { @MainActor in
-            await Task.yield()
-            modelRef.browser.beginRenaming(key: key)
-        }
     }
 
     private func commitRename(with modelRef: AppModel) {
@@ -879,8 +703,7 @@ private struct PathBar: View {
     }
 
     private var statusText: String {
-        if model.searchScope == .bucket,
-           (!model.browser.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.searchFilter != .all) {
+        if model.isBucketSearchActive {
             let progress = model.searchController.progress
             return model.searchController.isSearching
                 ? "已扫描 \(progress.scanned) 项"

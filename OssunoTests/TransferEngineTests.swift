@@ -135,6 +135,36 @@ struct TransferEngineTests {
         #expect(plan.items.first?.objectKey.hasSuffix("archive.bin") == true)
     }
 
+    @Test func folderUploadKeepsMacPackagesAsSingleFiles() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appending(path: "ossuno-package-upload-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let nested = root.appending(path: "Album", directoryHint: .isDirectory)
+        let pages = nested.appending(path: "Cover.pages", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: pages, withIntermediateDirectories: true)
+        try Data("inner".utf8).write(to: pages.appending(path: "Index.xml"))
+        try Data("plain".utf8).write(to: nested.appending(path: "notes.txt"))
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let plan = await TransferEngine.planUploads(
+            urls: [nested],
+            prefix: "uploads/",
+            template: "",
+            applyTemplate: false,
+            options: TransferEngine.UploadPreparationOptions(imagesOnly: false, convertHEIC: false)
+        )
+
+        let packageItem = try #require(plan.items.first { $0.filename == "Cover.pages" })
+        #expect(packageItem.failure?.contains("程序包") == true)
+        #expect(packageItem.objectKey.isEmpty)
+
+        let notes = try #require(plan.items.first { $0.filename == "notes.txt" })
+        #expect(notes.failure == nil)
+        #expect(notes.objectKey == "uploads/Album/notes.txt")
+
+        #expect(plan.items.count == 2)
+        #expect(!plan.items.contains(where: { $0.filename == "Index.xml" || $0.objectKey.contains("Index.xml") }))
+    }
+
     @Test func journalLoadFailureIsReported() {
         let engine = TransferEngine(journal: FailingTransferJournal(failLoad: true))
 

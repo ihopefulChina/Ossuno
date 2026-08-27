@@ -17,6 +17,10 @@ struct XMLNode: Sendable {
     }
 
     var string: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// Object keys, prefixes, and continuation tokens are opaque and may
+    /// contain leading or trailing spaces. Strip only pretty-print newlines.
+    var ossText: String { text.trimmingCharacters(in: .newlines) }
 }
 
 enum OSSXML {
@@ -64,11 +68,11 @@ enum OSSXML {
     static func listing(from data: Data) throws -> ObjectListing {
         let root = try parse(data)
         let folders = root.children("CommonPrefixes").compactMap { node -> OSSFolder? in
-            guard let prefix = node.child("Prefix")?.string, !prefix.isEmpty else { return nil }
+            guard let prefix = node.child("Prefix")?.ossText, !prefix.isEmpty else { return nil }
             return OSSFolder(prefix: prefix)
         }
         let objects = root.children("Contents").compactMap { node -> OSSObject? in
-            guard let key = node.child("Key")?.string, !key.isEmpty else { return nil }
+            guard let key = node.child("Key")?.ossText, !key.isEmpty else { return nil }
             return OSSObject(
                 key: key,
                 size: Int64(node.child("Size")?.string ?? "0") ?? 0,
@@ -82,7 +86,7 @@ enum OSSXML {
             folders: folders,
             objects: objects,
             isTruncated: truncated,
-            nextToken: root.child("NextContinuationToken")?.string
+            nextToken: root.child("NextContinuationToken")?.ossText
         )
     }
 

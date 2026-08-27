@@ -64,6 +64,40 @@ struct OSSClientTests {
         #expect(await sleeper.recordedDelays().isEmpty)
     }
 
+    @Test func signedRedirectResponsesAreRejectedWithoutRetry() async {
+        let transport = StubOSSTransport(steps: [
+            .response(
+                status: 307,
+                headers: [
+                    "Location": "https://evil.example/steal",
+                    "x-oss-request-id": "redirect-1"
+                ],
+                data: Data()
+            )
+        ])
+        let sleeper = RecordingRetrySleeper()
+        let client = Self.client(
+            transport: transport,
+            retryPolicy: OSSRetryPolicy(maxAttempts: 4, jitter: { 0 }),
+            retrySleeper: sleeper
+        )
+
+        do {
+            _ = try await client.listBuckets()
+            Issue.record("Expected RedirectRejected")
+        } catch let error as OSSServiceError {
+            #expect(error.code == "RedirectRejected")
+            #expect(error.statusCode == 307)
+            #expect(error.message.contains("https://evil.example/steal"))
+            #expect(error.requestId == "redirect-1")
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await transport.recordedRequests().count == 1)
+        #expect(await sleeper.recordedDelays().isEmpty)
+    }
+
     @Test func retryAfterOverridesTheShorterBackoffForReads() async throws {
         let transport = StubOSSTransport(steps: [
             .response(

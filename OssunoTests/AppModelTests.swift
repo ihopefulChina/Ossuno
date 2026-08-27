@@ -370,6 +370,216 @@ struct AppModelTests {
         #expect(model.banner?.text.contains("已复制") == true)
     }
 
+    @Test func bucketSearchIsActiveOnlyForBucketScopeQueries() {
+        let account = Self.account()
+        let bucket = Self.bucket()
+        let model = Self.model(account: account, bucket: bucket, transport: AccountTestTransport())
+
+        model.searchScope = .folder
+        model.browser.searchText = "hero"
+        #expect(!model.isBucketSearchActive)
+
+        model.searchScope = .bucket
+        #expect(model.isBucketSearchActive)
+
+        model.browser.searchText = "  "
+        model.searchFilter = .all
+        #expect(!model.isBucketSearchActive)
+
+        model.searchFilter = .largeObjects
+        #expect(model.isBucketSearchActive)
+    }
+
+    @Test func folderSearchTextStillShowsTheScopePicker() {
+        let account = Self.account()
+        let bucket = Self.bucket()
+        let model = Self.model(account: account, bucket: bucket, transport: AccountTestTransport())
+
+        #expect(!model.showsSearchChrome)
+
+        model.browser.searchText = "hero"
+        #expect(model.showsSearchChrome)
+        #expect(!model.isBucketSearchActive)
+
+        model.browser.searchText = ""
+        model.searchScope = .bucket
+        #expect(model.showsSearchChrome)
+    }
+
+    @Test func largeObjectSearchSelectionDrivesCopyAndDelete() async {
+        let account = Self.account()
+        let bucket = Self.bucket()
+        let model = Self.model(account: account, bucket: bucket, transport: BrowserSearchTransport())
+        model.searchScope = .bucket
+        model.searchFilter = .all
+        model.browser.searchText = "dump"
+        await model.runBucketSearch()
+
+        model.browser.replaceSelection(["unrelated-folder-item.png"])
+        model.selectSearchKeys(["art/database.dump"])
+
+        #expect(model.actionableSelectionKeys == ["art/database.dump"])
+        #expect(model.actionableObjects.map(\.key) == ["art/database.dump"])
+        #expect(model.canCopyCloudItems)
+
+        let payload = model.cloudDragPayload(clickedKey: "art/database.dump")
+        #expect(payload.objectKeys == ["art/database.dump"])
+        #expect(payload.folderPrefixes.isEmpty)
+
+        model.copyCloudSelection()
+        #expect(model.cloudClipboard?.objectKeys == ["art/database.dump"])
+
+        model.requestDeleteSelection()
+        #expect(model.wantsDeleteConfirmation)
+        #expect(model.deleteDialogTitle.contains("database.dump"))
+    }
+
+    @Test func searchContextMenuKeepsAMultiSelection() async {
+        let account = Self.account()
+        let bucket = Self.bucket()
+        let model = Self.model(account: account, bucket: bucket, transport: BrowserSearchTransport())
+        model.searchScope = .bucket
+        model.browser.searchText = "art/"
+        await model.runBucketSearch()
+
+        model.selectSearchKeys(["art/hero.png", "art/database.dump"])
+        model.selectForContextMenu("art/hero.png")
+
+        #expect(model.searchSelectedKeys == ["art/hero.png", "art/database.dump"])
+        #expect(model.menuActionKeys(clickedKey: "art/hero.png") == ["art/hero.png", "art/database.dump"])
+        #expect(model.deleteMenuTitle(clickedKey: "art/hero.png") == "删除 2 项")
+    }
+
+    @Test func searchContextActionsTargetSearchHitsNotTheHiddenFolder() async {
+        let account = Self.account()
+        let bucket = Self.bucket()
+        let model = Self.model(account: account, bucket: bucket, transport: BrowserSearchTransport())
+        model.searchScope = .bucket
+        model.browser.searchText = "dump"
+        await model.runBucketSearch()
+        model.selectSearchKeys(["art/database.dump"])
+
+        #expect(model.object(forKey: "art/database.dump")?.size == 84)
+        #expect(model.object(forKey: "cover.png") == nil)
+
+        let actions = BrowserContextActions.live(
+            model: model,
+            kind: .bucketSearch,
+            showFileImporter: {}
+        )
+        #expect(actions.tableItemIDs == ["art/database.dump"])
+        #expect(actions.showsRevealInFolder)
+        #expect(actions.usesSearchEmptyMenu)
+        #expect(actions.viewMode == .list)
+        #expect(actions.selectedKeys() == ["art/database.dump"])
+    }
+
+    @Test func inspectorObjectFollowsSearchSelectionNotTheHiddenFolder() async {
+        let account = Self.account()
+        let bucket = Self.bucket()
+        let model = Self.model(account: account, bucket: bucket, transport: BrowserSearchTransport())
+        model.searchScope = .bucket
+        model.browser.searchText = "dump"
+        await model.runBucketSearch()
+        model.browser.imagesOnly = false
+        model.browser.objects = [
+            OSSObject(key: "cover.png", size: 10, etag: "a", lastModified: nil, storageClass: "Standard")
+        ]
+        model.browser.replaceSelection(["cover.png"])
+        model.selectSearchKeys(["art/database.dump"])
+
+        #expect(model.inspectorObject?.key == "art/database.dump")
+    }
+
+    @Test func confirmedSearchDeleteStillRunsAfterResultsAreCleared() async {
+        let account = Self.account()
+        let bucket = Self.bucket()
+        let transport = RecordingDeleteTransport()
+        let model = Self.model(account: account, bucket: bucket, transport: transport)
+        model.searchScope = .bucket
+        model.browser.searchText = "dump"
+        await model.runBucketSearch()
+        model.selectSearchKeys(["art/database.dump"])
+        model.requestDeleteSelection()
+
+        #expect(model.wantsDeleteConfirmation)
+        model.searchController.clear()
+        #expect(model.searchController.results.isEmpty)
+        #expect(model.isBucketSearchActive)
+
+        await model.deleteSelection()
+
+        #expect(await transport.deletedKeys == ["art/database.dump"])
+        #expect(model.banner?.text.contains("已删除") == true)
+    }
+
+    @Test func searchDownloadsKeepParentPrefixes() async {
+        let account = Self.account()
+        let bucket = Self.bucket()
+        let model = Self.model(account: account, bucket: bucket, transport: BrowserSearchTransport())
+        let first = OSSObject(
+            key: "a/hero.png",
+            size: 1,
+            etag: "a",
+            lastModified: nil,
+            storageClass: "Standard"
+        )
+        let second = OSSObject(
+            key: "b/hero.png",
+            size: 1,
+            etag: "b",
+            lastModified: nil,
+            storageClass: "Standard"
+        )
+
+        #expect(model.downloadRelativePath(for: first, preserveKeyPath: true) == "a/hero.png")
+        #expect(model.downloadRelativePath(for: second, preserveKeyPath: true) == "b/hero.png")
+        #expect(model.downloadRelativePath(for: first, preserveKeyPath: false) == "hero.png")
+
+        let dest = FileManager.default.temporaryDirectory
+            .appending(path: "ossuno-search-download-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dest) }
+
+        await model.startDownloads(
+            objects: [first, second],
+            folders: [],
+            to: dest,
+            preserveObjectKeyPath: true
+        )
+
+        let relative = Set(model.transfers.jobs.compactMap { job -> String? in
+            guard let path = job.localURL?.standardizedFileURL.path else { return nil }
+            let root = dest.standardizedFileURL.path + "/"
+            guard path.hasPrefix(root) else { return nil }
+            return String(path.dropFirst(root.count))
+        })
+        #expect(relative == ["a/hero.png", "b/hero.png"])
+    }
+
+    @Test func searchRenamePresentsAnErrorWhenTheFolderListingCannotRevealTheHit() async throws {
+        let account = Self.account()
+        let bucket = Self.bucket()
+        let model = Self.model(
+            account: account,
+            bucket: bucket,
+            transport: SearchThenEmptyFolderTransport()
+        )
+        model.searchScope = .bucket
+        model.browser.searchText = "dump"
+        await model.runBucketSearch()
+        model.selectSearchKeys(["art/database.dump"])
+
+        model.requestRename(key: "art/database.dump")
+        try await Self.waitUntil {
+            model.banner?.isError == true
+                && model.banner?.text.contains("无法重命名") == true
+        }
+
+        #expect(model.browser.renameSession == nil)
+        #expect(model.banner?.text.contains("打开所在文件夹") == true)
+    }
+
     @Test func copyWithoutSelectionDoesNotCreateAClipboard() {
         let account = Self.account()
         let bucket = Self.bucket()
@@ -469,6 +679,26 @@ struct AppModelTests {
         #expect(model.cloudClipboardMode == .move)
         #expect(model.pasteMenuTitle == "移动到此处")
         #expect(model.banner?.text.contains("已剪切") == true)
+    }
+
+    @Test func replacingThePasteboardInvalidatesTheInMemoryCloudClipboard() {
+        let account = Self.account()
+        let bucket = Self.bucket()
+        let model = Self.model(account: account, bucket: bucket, transport: AccountTestTransport())
+        model.browser.imagesOnly = false
+        model.browser.objects = [
+            OSSObject(key: "cover.png", size: 10, etag: "a", lastModified: nil, storageClass: "Standard")
+        ]
+        model.browser.replaceSelection(["cover.png"])
+        model.copyCloudSelection()
+        #expect(model.canPasteCloudItems)
+
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString("unrelated", forType: .string)
+
+        #expect(model.cloudClipboard != nil)
+        #expect(!model.canPasteCloudItems)
+        #expect(model.resolvedClipboardItem == nil)
     }
 
     @Test func moveStaysInPlaceWhenPastingIntoTheSameFolder() {
@@ -886,6 +1116,75 @@ private actor CloudConflictPromptTransport: OSSHTTPTransport {
             status: 200,
             headers: ["Content-Length": "1", "ETag": "existing"],
             data: Data(),
+            temporaryDownloadURL: nil
+        )
+    }
+}
+
+private actor RecordingDeleteTransport: OSSHTTPTransport {
+    private(set) var deletedKeys: [String] = []
+
+    func send(
+        _ request: URLRequest,
+        body: OSSHTTPBody,
+        download: Bool,
+        onProgress: (@Sendable (Int64, Int64) -> Void)?
+    ) async throws -> OSSHTTPResult {
+        if request.httpMethod == "DELETE" {
+            let path = request.url?.path ?? ""
+            deletedKeys.append(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
+            return OSSHTTPResult(
+                status: 204,
+                headers: [:],
+                data: Data(),
+                temporaryDownloadURL: nil
+            )
+        }
+        let xml = """
+        <ListBucketResult>
+          <IsTruncated>false</IsTruncated>
+          <Contents>
+            <Key>art/database.dump</Key><Size>84</Size><ETag>dump</ETag><StorageClass>Standard</StorageClass>
+          </Contents>
+        </ListBucketResult>
+        """
+        return OSSHTTPResult(
+            status: 200,
+            headers: [:],
+            data: Data(xml.utf8),
+            temporaryDownloadURL: nil
+        )
+    }
+}
+
+private actor SearchThenEmptyFolderTransport: OSSHTTPTransport {
+    func send(
+        _ request: URLRequest,
+        body: OSSHTTPBody,
+        download: Bool,
+        onProgress: (@Sendable (Int64, Int64) -> Void)?
+    ) async throws -> OSSHTTPResult {
+        let xml: String
+        if request.url?.query?.contains("delimiter") == true {
+            xml = """
+            <ListBucketResult>
+              <IsTruncated>false</IsTruncated>
+            </ListBucketResult>
+            """
+        } else {
+            xml = """
+            <ListBucketResult>
+              <IsTruncated>false</IsTruncated>
+              <Contents>
+                <Key>art/database.dump</Key><Size>84</Size><ETag>dump</ETag><StorageClass>Standard</StorageClass>
+              </Contents>
+            </ListBucketResult>
+            """
+        }
+        return OSSHTTPResult(
+            status: 200,
+            headers: [:],
+            data: Data(xml.utf8),
             temporaryDownloadURL: nil
         )
     }
