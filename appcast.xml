@@ -3,49 +3,36 @@
     <channel>
         <title>Ossuno</title>
         <item>
-            <title>1.0.0</title>
-            <pubDate>Tue, 18 Aug 2026 14:43:32 +0800</pubDate>
-            <link>https://github.com/ihopefulChina/Ossuno/releases/tag/v1.0.0</link>
-            <sparkle:version>3</sparkle:version>
-            <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+            <title>1.0.1</title>
+            <pubDate>Thu, 27 Aug 2026 14:38:30 +0800</pubDate>
+            <link>https://github.com/ihopefulChina/Ossuno/releases/tag/v1.0.1</link>
+            <sparkle:version>5</sparkle:version>
+            <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# Ossuno 1.0.0
+            <description sparkle:format="markdown"><![CDATA[# Ossuno 1.0.1
 
-Ossuno 的首个正式版本：一个面向阿里云 OSS 的原生 macOS 客户端，并附带可独立使用的 `ossuno-mcp`。
+这是一次稳定性更新，重点修复 Bucket 搜索（含大文件筛选）的选择、菜单、检查器和传输行为。
 
-## 下载 Ossuno 1.0.0
+## 下载 Ossuno 1.0.1
 
-- [Apple Silicon 版（M 系列芯片）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.0-arm64.dmg)
-- [Intel 版（x86_64）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.0-x86_64.dmg)
+- [Apple Silicon 版（M 系列芯片）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.1-arm64.dmg)
+- [Intel 版（x86_64）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.1-x86_64.dmg)
 
 两个安装包都需要 macOS 15 或更高版本。不确定芯片类型时，可在苹果菜单的「关于本机」中查看“芯片”或“处理器”。
 
-## ossuno-mcp 1.0.0
+## 修复
 
-[`ossuno-mcp`](https://www.npmjs.com/package/ossuno-mcp/v/1.0.0) 已发布到 npm，可独立注册到 Codex、Claude Desktop、Claude Code、Cursor 等支持 MCP 的 AI 客户端：
-
-```bash
-npx ossuno-mcp auth
-npx ossuno-mcp install
-```
-
-它提供 Bucket 浏览、上传、下载与临时签名链接，凭证只保存在 macOS 钥匙串。
-
-## 主要能力
-
-- 浏览任意类型的 OSS 对象，支持文件夹、全 Bucket 搜索、排序、筛选、路径导航与空格快速查看。
-- 上传、下载、复制、移动、重命名和拖放均保留对象属性；大文件支持分片上传、断点续传与 CRC64 校验。
-- 对象属性可编辑 Content-Type、缓存策略、下载文件名、自定义元数据、ACL 与 OSS 标签。
-- Bucket 开启版本控制时，可撤销刚完成的删除、移动和重命名。
-
-## 安全与可靠性
-
-- 覆盖、移动和撤销会绑定精确的 ETag、大小与 `versionId`；对象在操作期间发生变化时安全取消，不覆盖或移动并发写入的新对象。
-- 云端移动先完成并验证复制，再按精确版本删除来源；无法确认提交结果时保留对象并提示人工检查。
-- 本地下载使用受控临时文件并原子发布，拒绝符号链接逃逸和静默覆盖。
-- MCP 默认拒绝覆盖远端同名对象，并把本地文件访问限制在明确允许的目录中；凭证只保存在 macOS 钥匙串。
-- 诊断信息经过字段白名单过滤，不包含 AccessKey、Secret、Token、Bucket、对象 Key 或本地路径。
+- Bucket 搜索和大文件筛选的右键菜单、键盘快捷键、检查器和下载现在作用于搜索结果，而不是背后隐藏的文件夹列表。
+- 从搜索结果下载时保留对象完整路径，避免不同目录下的同名文件互相覆盖。
+- 已确认的搜索删除会继续执行，即使结果列表在确认后被刷新清空。
+- 搜索里重命名如果打不开所在文件夹，会给出明确提示，而不再静默失败。
+- 不再把 Pages、Keynote 等 Mac 程序包展开成内部文件上传；这类项目会明确失败。
+- 签名请求拒绝跟随 HTTP 重定向，避免把 `Authorization` 转到其他主机。
+- 列举对象时保留 Key、Prefix 和 continuation token 的首尾空格；分片完成 XML 会转义 ETag。
+- 未完成的 Bucket 扫描不再写入缓存，避免下次相同查询读到残缺结果。
+- 复制到剪贴板后，若系统剪贴板被其他内容替换，云端粘贴会失效，避免贴出过期内容。
+- `ossuno-mcp` 同步修正了本地文件大小读取（不再把体积读成 0），并同样保留对象键空白。
 
 ## 系统要求
 
@@ -62,51 +49,38 @@ npx ossuno-mcp install
 
 仅在确认安装包来自本仓库的 GitHub Releases 时放行。详细背景见 [Apple 的安全打开说明](https://support.apple.com/zh-cn/102445)。
 ]]></description>
-            <enclosure url="https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.0/Ossuno-1.0.0-arm64.dmg" length="4457360" type="application/octet-stream" sparkle:edSignature="6aoOvypAwtH7I0G1Fj+KEv0BxT6wSvesjyCpfWo6xgPJM7gp/KG0HGTYa5nwd1QTRjUoUGedIVmGhHuHNULTCg=="/>
+            <enclosure url="https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.1/Ossuno-1.0.1-arm64.dmg" length="4363953" type="application/octet-stream" sparkle:edSignature="ZWLqi5Zwhi1v6peC9fjmQa0ZEoBLaZBUz1THHLY2Ia9HU6QZHxFQcrUntP24k3dw4GCMlGCkBjjQnmoV/pgEAQ=="/>
         </item>
         <item>
-            <title>1.0.0</title>
-            <pubDate>Tue, 18 Aug 2026 14:42:34 +0800</pubDate>
-            <link>https://github.com/ihopefulChina/Ossuno/releases/tag/v1.0.0</link>
-            <sparkle:version>2</sparkle:version>
-            <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+            <title>1.0.1</title>
+            <pubDate>Thu, 27 Aug 2026 14:37:27 +0800</pubDate>
+            <link>https://github.com/ihopefulChina/Ossuno/releases/tag/v1.0.1</link>
+            <sparkle:version>4</sparkle:version>
+            <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[# Ossuno 1.0.0
+            <description sparkle:format="markdown"><![CDATA[# Ossuno 1.0.1
 
-Ossuno 的首个正式版本：一个面向阿里云 OSS 的原生 macOS 客户端，并附带可独立使用的 `ossuno-mcp`。
+这是一次稳定性更新，重点修复 Bucket 搜索（含大文件筛选）的选择、菜单、检查器和传输行为。
 
-## 下载 Ossuno 1.0.0
+## 下载 Ossuno 1.0.1
 
-- [Apple Silicon 版（M 系列芯片）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.0-arm64.dmg)
-- [Intel 版（x86_64）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.0-x86_64.dmg)
+- [Apple Silicon 版（M 系列芯片）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.1-arm64.dmg)
+- [Intel 版（x86_64）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.1-x86_64.dmg)
 
 两个安装包都需要 macOS 15 或更高版本。不确定芯片类型时，可在苹果菜单的「关于本机」中查看“芯片”或“处理器”。
 
-## ossuno-mcp 1.0.0
+## 修复
 
-[`ossuno-mcp`](https://www.npmjs.com/package/ossuno-mcp/v/1.0.0) 已发布到 npm，可独立注册到 Codex、Claude Desktop、Claude Code、Cursor 等支持 MCP 的 AI 客户端：
-
-```bash
-npx ossuno-mcp auth
-npx ossuno-mcp install
-```
-
-它提供 Bucket 浏览、上传、下载与临时签名链接，凭证只保存在 macOS 钥匙串。
-
-## 主要能力
-
-- 浏览任意类型的 OSS 对象，支持文件夹、全 Bucket 搜索、排序、筛选、路径导航与空格快速查看。
-- 上传、下载、复制、移动、重命名和拖放均保留对象属性；大文件支持分片上传、断点续传与 CRC64 校验。
-- 对象属性可编辑 Content-Type、缓存策略、下载文件名、自定义元数据、ACL 与 OSS 标签。
-- Bucket 开启版本控制时，可撤销刚完成的删除、移动和重命名。
-
-## 安全与可靠性
-
-- 覆盖、移动和撤销会绑定精确的 ETag、大小与 `versionId`；对象在操作期间发生变化时安全取消，不覆盖或移动并发写入的新对象。
-- 云端移动先完成并验证复制，再按精确版本删除来源；无法确认提交结果时保留对象并提示人工检查。
-- 本地下载使用受控临时文件并原子发布，拒绝符号链接逃逸和静默覆盖。
-- MCP 默认拒绝覆盖远端同名对象，并把本地文件访问限制在明确允许的目录中；凭证只保存在 macOS 钥匙串。
-- 诊断信息经过字段白名单过滤，不包含 AccessKey、Secret、Token、Bucket、对象 Key 或本地路径。
+- Bucket 搜索和大文件筛选的右键菜单、键盘快捷键、检查器和下载现在作用于搜索结果，而不是背后隐藏的文件夹列表。
+- 从搜索结果下载时保留对象完整路径，避免不同目录下的同名文件互相覆盖。
+- 已确认的搜索删除会继续执行，即使结果列表在确认后被刷新清空。
+- 搜索里重命名如果打不开所在文件夹，会给出明确提示，而不再静默失败。
+- 不再把 Pages、Keynote 等 Mac 程序包展开成内部文件上传；这类项目会明确失败。
+- 签名请求拒绝跟随 HTTP 重定向，避免把 `Authorization` 转到其他主机。
+- 列举对象时保留 Key、Prefix 和 continuation token 的首尾空格；分片完成 XML 会转义 ETag。
+- 未完成的 Bucket 扫描不再写入缓存，避免下次相同查询读到残缺结果。
+- 复制到剪贴板后，若系统剪贴板被其他内容替换，云端粘贴会失效，避免贴出过期内容。
+- `ossuno-mcp` 同步修正了本地文件大小读取（不再把体积读成 0），并同样保留对象键空白。
 
 ## 系统要求
 
@@ -123,7 +97,7 @@ npx ossuno-mcp install
 
 仅在确认安装包来自本仓库的 GitHub Releases 时放行。详细背景见 [Apple 的安全打开说明](https://support.apple.com/zh-cn/102445)。
 ]]></description>
-            <enclosure url="https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.0/Ossuno-1.0.0-x86_64.dmg" length="4620745" type="application/octet-stream" sparkle:edSignature="aD6EzeQAA5Mz9+SkEB0wCnWcRDq+k4BW0aP5AxBPasVwyAwGmqyXy6+mad1TZsLQXTwYzu3R3P0Lwqa59QLNBA=="/>
+            <enclosure url="https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.1/Ossuno-1.0.1-x86_64.dmg" length="4583873" type="application/octet-stream" sparkle:edSignature="7lQ1ueCjG2hCOnpkz2SyQMKUHTBAnFkWzPq1SUgQ1KMna0N/KmSfcjjwN3yFhCcMHg96WRx6Ok7+C9uI96SMAw=="/>
         </item>
     </channel>
 </rss>
