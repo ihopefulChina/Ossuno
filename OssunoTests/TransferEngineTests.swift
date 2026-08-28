@@ -118,6 +118,40 @@ struct TransferEngineTests {
         #expect(engine.jobs.map(\.status) == [.paused, .paused])
     }
 
+    @Test func resumeDoesNotStartWhileAPausedJobStillHasAnInFlightTask() {
+        let engine = TransferEngine()
+        var running = Self.persistedJob(status: .running)
+        running.id = UUID()
+        engine.jobs = [running]
+        engine.pause(running.id)
+
+        #expect(engine.jobs.first?.status == .paused)
+        engine.resume(running.id)
+        #expect(engine.jobs.first?.status == .paused || engine.jobs.first?.status == .queued)
+        #expect(engine.jobs.count == 1)
+    }
+
+    @Test func rootUploadWithFilenameTemplateDoesNotNestTheName() async throws {
+        let source = try Self.temporaryFile(named: "hero.png")
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        let plan = await TransferEngine.planUploads(
+            urls: [source],
+            prefix: "",
+            template: "assets/{filename}",
+            applyTemplate: true,
+            options: TransferEngine.UploadPreparationOptions(imagesOnly: false, convertHEIC: false)
+        )
+
+        #expect(plan.items.count == 1)
+        #expect(plan.items.first?.failure == nil)
+        let key = try #require(plan.items.first?.objectKey)
+        #expect(key.hasPrefix("assets/"))
+        #expect(key.hasSuffix("hero.png"))
+        #expect(!key.contains("hero.png/"))
+        #expect(key.split(separator: "/").count == 2)
+    }
+
     @Test func explicitUploadIsNotFilteredByTheBrowserImagesOnlyPreference() async throws {
         let source = try Self.temporaryFile(named: "archive.bin")
         defer { try? FileManager.default.removeItem(at: source) }

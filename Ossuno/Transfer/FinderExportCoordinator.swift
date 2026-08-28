@@ -117,10 +117,22 @@ struct FinderExportPlan: Equatable, Sendable {
         reserved: inout Set<String>,
         isFolder: Bool
     ) -> String {
-        let key = isFolder ? name + "/" : name
-        let uniqueKey = TransferConflictPlanner.availableKey(for: key, existing: reserved)
+        // APFS cannot host a file and a directory with the same leaf name.
+        // Reserve both spellings so `photo` and `photo/` cannot collide.
+        var occupied = reserved
+        if reserved.contains(name) { occupied.insert(name + "/") }
+        if reserved.contains(name + "/") { occupied.insert(name) }
+        let seed = isFolder ? name + "/" : name
+        let uniqueKey = TransferConflictPlanner.availableKey(for: seed, existing: occupied)
+        if uniqueKey.hasSuffix("/") {
+            let leaf = String(uniqueKey.dropLast())
+            reserved.insert(uniqueKey)
+            reserved.insert(leaf)
+            return leaf
+        }
         reserved.insert(uniqueKey)
-        return isFolder ? String(uniqueKey.dropLast()) : uniqueKey
+        reserved.insert(uniqueKey + "/")
+        return uniqueKey
     }
 }
 

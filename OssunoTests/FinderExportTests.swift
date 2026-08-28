@@ -32,6 +32,29 @@ struct FinderExportTests {
         #expect(plan.entries.map(\.relativePath) == ["Assets/Icons/app.png", "Assets/README.txt"])
     }
 
+    @Test func fileAndFolderWithTheSameLeafNameAreDisambiguated() throws {
+        let payload = Self.payload(objects: ["photo"], folders: ["photo/"])
+        let plan = try FinderExportPlan.make(
+            payload: payload,
+            objects: [Self.object("photo")],
+            folderListings: [
+                "photo/": [Self.object("photo/inside.txt")]
+            ]
+        )
+
+        #expect(plan.rootName == "Ossuno 下载")
+        let paths = Set(plan.entries.map(\.relativePath))
+        #expect(paths.contains("Ossuno 下载/photo") || paths.contains("Ossuno 下载/photo 2"))
+        #expect(paths.contains("Ossuno 下载/photo/inside.txt") || paths.contains("Ossuno 下载/photo 2/inside.txt"))
+        let fileLeaf = plan.entries.first { $0.objectKey == "photo" }?.relativePath
+        let folderLeaf = plan.entries.first { $0.objectKey == "photo/inside.txt" }?.relativePath
+            .split(separator: "/").dropFirst().first
+            .map(String.init)
+        #expect(fileLeaf != nil)
+        #expect(folderLeaf != nil)
+        #expect(fileLeaf?.split(separator: "/").last.map(String.init) != folderLeaf)
+    }
+
     @Test func multipleItemsUseAContainerAndFinderStyleDuplicateNames() throws {
         let payload = Self.payload(objects: ["a/hero.png", "b/hero.png"])
         let plan = try FinderExportPlan.make(

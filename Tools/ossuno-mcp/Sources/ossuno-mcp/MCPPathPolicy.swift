@@ -30,6 +30,7 @@ struct MCPPathPolicy: Sendable {
                 "\(home)/Documents",
                 "\(home)/Downloads",
                 "/tmp",
+                fileManager.temporaryDirectory.path,
             ]
         }
         try self.init(paths: configuredPaths)
@@ -67,6 +68,9 @@ struct MCPPathPolicy: Sendable {
         guard lstat(match.candidate.path, &info) == 0,
               info.st_mode & S_IFMT == S_IFREG else {
             throw MCPPathPolicyError.notRegularFile(match.candidate.path)
+        }
+        if info.st_nlink > 1 {
+            throw MCPPathPolicyError.hardLink(match.candidate.path)
         }
         try ensureCanonicalContainment(match.candidate, root: match.root)
         return match.candidate
@@ -164,6 +168,7 @@ enum MCPPathPolicyError: LocalizedError, Equatable {
     case absolutePathRequired(String)
     case outsideAllowedRoots(path: String, roots: String)
     case symbolicLink(String)
+    case hardLink(String)
     case notRegularFile(String)
     case cannotInspect(String)
 
@@ -181,6 +186,8 @@ enum MCPPathPolicyError: LocalizedError, Equatable {
             return "拒绝访问允许目录之外的路径：\(path)。当前允许目录：\(roots)。可通过 \(MCPPathPolicy.environmentKey) 配置。"
         case .symbolicLink(let path):
             return "拒绝通过符号链接访问本地文件：\(path)"
+        case .hardLink(let path):
+            return "拒绝通过硬链接访问本地文件：\(path)"
         case .notRegularFile(let path):
             return "上传源必须是存在的普通文件：\(path)"
         case .cannotInspect(let path):

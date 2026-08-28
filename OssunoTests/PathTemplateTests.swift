@@ -79,6 +79,37 @@ struct PathTemplateTests {
         #expect(PathTemplate.destinationKey(prefix: "avatars/", filename: "hero.png", applyTemplate: true, template: "assets/{yyyy}/{MM}/{dd}/") == "avatars/hero.png")
     }
 
+    @Test func destinationKeyDoesNotRepeatFilenameWhenTemplateNamesTheObject() {
+        #expect(
+            PathTemplate.destinationKey(
+                prefix: "",
+                filename: "hero.png",
+                applyTemplate: true,
+                template: "assets/{filename}"
+            ) == "assets/hero.png"
+        )
+        #expect(
+            PathTemplate.destinationKey(
+                prefix: "",
+                filename: "cat.png",
+                applyTemplate: true,
+                template: "photos/{name}.{ext}"
+            ) == "photos/cat.png"
+        )
+    }
+
+    @Test func destinationKeyStillAppendsFilenameToADatePrefix() {
+        let extra = PathTemplate.expand("assets/{yyyy}/{MM}/{dd}/", filename: "hero.png")
+        #expect(
+            PathTemplate.destinationKey(
+                prefix: "",
+                filename: "hero.png",
+                applyTemplate: true,
+                template: "assets/{yyyy}/{MM}/{dd}/"
+            ) == PathTemplate.join(extra, key: "hero.png")
+        )
+    }
+
     @Test func relativeStripsPrefix() {
         #expect(PathTemplate.relative("assets/2026/a.png", under: "assets/") == "2026/a.png")
         #expect(PathTemplate.relative("assets/a.png", under: "assets/") == "a.png")

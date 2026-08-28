@@ -47,13 +47,20 @@ struct InspectorView: View {
 
     @ViewBuilder
     private var informationContent: some View {
-        if model.browser.selectedKeys.count > 1 {
-            selectionInfo
-        } else if let object = model.browser.primarySelection {
+        switch model.inspectorSurface {
+        case .multiple(_, let folderCount, let objects):
+            selectionInfo(folderCount: folderCount, objects: objects)
+        case .object(let object):
             objectInfo(object)
-        } else if model.selectedBucket != nil {
+        case .folder:
             folderInfo
-        } else {
+        case .searchEmpty:
+            ContentUnavailableView(
+                "没有可显示的信息",
+                systemImage: "magnifyingglass",
+                description: Text("在搜索结果中选择一个项目。")
+            )
+        case .unavailable:
             ContentUnavailableView(
                 "没有可显示的信息",
                 systemImage: "info.circle",
@@ -63,22 +70,24 @@ struct InspectorView: View {
     }
 
     private var contextTitle: String {
-        if model.browser.selectedKeys.count > 1 {
-            return "已选择 \(model.browser.selectedKeys.count) 项"
-        }
-        if let object = model.browser.primarySelection {
+        switch model.inspectorSurface {
+        case .multiple(let count, _, _):
+            return "已选择 \(count) 项"
+        case .object(let object):
             return object.name
+        case .searchEmpty:
+            return "搜索结果"
+        case .folder:
+            if !model.browser.prefix.isEmpty {
+                return PathTemplate.lastComponent(model.browser.prefix)
+            }
+            return model.selectedBucket?.name ?? "当前项目"
+        case .unavailable:
+            return "当前项目"
         }
-        if !model.browser.prefix.isEmpty {
-            return PathTemplate.lastComponent(model.browser.prefix)
-        }
-        return model.selectedBucket?.name ?? "当前项目"
     }
 
-    private var selectionInfo: some View {
-        let keys = model.browser.selectedKeys
-        let folders = model.browser.folders.filter { keys.contains($0.prefix) }.count
-        let objects = model.browser.objects.filter { keys.contains($0.key) }
+    private func selectionInfo(folderCount: Int, objects: [OSSObject]) -> some View {
         let bytes = objects.reduce(Int64(0)) { $0 + $1.size }
 
         return VStack(alignment: .leading, spacing: 16) {
@@ -89,11 +98,11 @@ struct InspectorView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
 
-            Text("已选择 \(keys.count) 项")
+            Text("已选择 \(folderCount + objects.count) 项")
                 .font(.title3.weight(.semibold))
 
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
-                if folders > 0 { infoRow("文件夹", "\(folders)") }
+                if folderCount > 0 { infoRow("文件夹", "\(folderCount)") }
                 if !objects.isEmpty { infoRow("文件", "\(objects.count)") }
                 if bytes > 0 { infoRow("文件大小", Formatters.bytes(bytes)) }
             }

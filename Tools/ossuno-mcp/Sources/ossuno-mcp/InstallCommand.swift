@@ -381,7 +381,13 @@ enum InstallCommand {
         if uninstalling {
             updatedServers.removeValue(forKey: serverKey)
         } else {
-            updatedServers[serverKey] = launch.jsonEntry
+            var entry = launch.jsonEntry
+            if let existing = servers[serverKey] as? [String: Any] {
+                for (key, value) in existing where key != "command" && key != "args" {
+                    entry[key] = value
+                }
+            }
+            updatedServers[serverKey] = entry
         }
         if updatedServers.isEmpty {
             root.removeValue(forKey: "mcpServers")
@@ -394,8 +400,8 @@ enum InstallCommand {
     }
 
     /// Line-based upsert/removal of a `[section]` block in a TOML file.
-    /// The section spans from its header to the next top-level `[` header or EOF.
-    private static func upsertTOMLSection(
+    /// The section spans from its header to the next table header or EOF.
+    static func upsertTOMLSection(
         _ source: String, section: String, body: [String], removing: Bool
     ) -> String {
         var lines = source.components(separatedBy: "\n")
@@ -403,14 +409,14 @@ enum InstallCommand {
         var index = 0
         var replaced = false
         while index < lines.count {
-            if lines[index].trimmingCharacters(in: .whitespaces) == header {
+            if tomlTableName(lines[index]) == section {
                 var end = index + 1
                 while end < lines.count {
-                    let trimmed = lines[end].trimmingCharacters(in: .whitespaces)
-                    if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") { break }
+                    if tomlTableName(lines[end]) != nil { break }
                     end += 1
                 }
-                let replacement = removing ? [] : ([header] + body)
+                let preserved = removing ? [] : preservedTOMLLines(lines[index + 1..<end])
+                let replacement = removing ? [] : ([header] + body + preserved)
                 lines.replaceSubrange(index..<end, with: replacement)
                 replaced = true
                 break
@@ -427,6 +433,47 @@ enum InstallCommand {
         // Normalize: strip trailing blank lines, single trailing newline.
         while lines.last == "" { lines.removeLast() }
         return lines.joined(separator: "\n") + "\n"
+    }
+
+    static func encodedJSONForTesting(
+        root: [String: Any],
+        launch: LaunchMode,
+        uninstalling: Bool
+    ) throws -> String {
+        try encodedJSON(root: root, launch: launch, uninstalling: uninstalling)
+    }
+
+    /// Table header name, ignoring trailing comments (`[a.b] # note`).
+    static func tomlTableName(_ line: String) -> String? {
+        var trimmed = line.trimmingCharacters(in: .whitespaces)
+        if let comment = trimmed.firstIndex(of: "#") {
+            trimmed = String(trimmed[..<comment]).trimmingCharacters(in: .whitespaces)
+        }
+        guard trimmed.hasPrefix("["), trimmed.hasSuffix("]"), trimmed.count >= 2 else {
+            return nil
+        }
+        return String(trimmed.dropFirst().dropLast())
+    }
+
+    private static func preservedTOMLLines(_ oldBody: ArraySlice<String>) -> [String] {
+        oldBody.compactMap { line -> String? in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { return nil }
+            if tomlTableName(line) != nil { return nil }
+            guard let key = tomlKey(line) else { return line }
+            if key == "command" || key == "args" { return nil }
+            return line
+        }
+    }
+
+    private static func tomlKey(_ line: String) -> String? {
+        var trimmed = line.trimmingCharacters(in: .whitespaces)
+        if let comment = trimmed.firstIndex(of: "#"), !trimmed.hasPrefix("\"") {
+            trimmed = String(trimmed[..<comment]).trimmingCharacters(in: .whitespaces)
+        }
+        guard let equals = trimmed.firstIndex(of: "=") else { return nil }
+        let key = String(trimmed[..<equals]).trimmingCharacters(in: .whitespaces)
+        return key.isEmpty ? nil : key
     }
 
     fileprivate static func tomlString(_ value: String) -> String {

@@ -6,6 +6,14 @@ enum BannerAction: Equatable {
     case undoCloudOperation
 }
 
+enum InspectorSurface: Equatable {
+    case unavailable
+    case folder
+    case searchEmpty
+    case object(OSSObject)
+    case multiple(count: Int, folderCount: Int, objects: [OSSObject])
+}
+
 struct BannerMessage: Identifiable, Equatable {
     var id = UUID()
     var text: String
@@ -1168,7 +1176,14 @@ final class AppModel {
 
     private var deleteTargetObjects: [OSSObject] {
         if isBucketSearchActive {
-            return searchController.results.filter { pendingDeleteKeys.contains($0.key) }
+            let fromResults = searchController.results.filter { pendingDeleteKeys.contains($0.key) }
+            let missing = pendingDeleteKeys.subtracting(fromResults.map(\.key))
+            // The confirmation dialog is live. If the search list refreshes
+            // after the user clicked delete, still name the pending keys.
+            let synthesized = missing.sorted().map {
+                OSSObject(key: $0, size: 0, etag: "", lastModified: nil, storageClass: "")
+            }
+            return fromResults + synthesized
         }
         return browser.objects.filter { pendingDeleteKeys.contains($0.key) }
     }
@@ -3047,6 +3062,40 @@ final class AppModel {
 
     var inspectorObject: OSSObject? {
         isBucketSearchActive ? searchSelectedObjects.first : browser.primarySelection
+    }
+
+    /// What the inspector sheet should render. Search must never fall back to
+    /// the hidden folder listing — download/delete in the sheet follow
+    /// `actionableSelectionKeys`, so the heading has to match.
+    var inspectorSurface: InspectorSurface {
+        if isBucketSearchActive {
+            let keys = actionableSelectionKeys
+            if keys.count > 1 {
+                return .multiple(
+                    count: keys.count,
+                    folderCount: 0,
+                    objects: actionableObjects
+                )
+            }
+            if let object = inspectorObject {
+                return .object(object)
+            }
+            return .searchEmpty
+        }
+        if browser.selectedKeys.count > 1 {
+            return .multiple(
+                count: browser.selectedKeys.count,
+                folderCount: browser.folders.filter { browser.selectedKeys.contains($0.prefix) }.count,
+                objects: browser.objects.filter { browser.selectedKeys.contains($0.key) }
+            )
+        }
+        if let object = browser.primarySelection {
+            return .object(object)
+        }
+        if selectedBucket != nil {
+            return .folder
+        }
+        return .unavailable
     }
 
     func loadInspector() async {

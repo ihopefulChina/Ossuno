@@ -78,4 +78,34 @@ final class MCPPathPolicyTests: XCTestCase, @unchecked Sendable {
             XCTAssertEqual(error as? MCPPathPolicyError, .invalidRoot("/"))
         }
     }
+
+    func testDefaultRootsIncludeSystemTemporaryDirectory() throws {
+        let policy = try MCPPathPolicy(environment: [:])
+        let temp = FileManager.default.temporaryDirectory
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+        let file = temp.appendingPathComponent("ossuno-mcp-default-temp-\(UUID().uuidString).txt")
+        try Data("temp".utf8).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        XCTAssertEqual(try policy.validateUploadPath(file.path).path, file.path)
+    }
+
+    func testUploadRejectsHardLink() throws {
+        let root = try makeTemporaryDirectory()
+        let outside = try makeTemporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: outside)
+        }
+        let secret = outside.appendingPathComponent("secret.txt")
+        try Data("secret".utf8).write(to: secret)
+        let link = root.appendingPathComponent("alias.txt")
+        try FileManager.default.linkItem(at: secret, to: link)
+        let policy = try MCPPathPolicy(paths: [root.path])
+        XCTAssertThrowsError(try policy.validateUploadPath(link.path)) { error in
+            guard case MCPPathPolicyError.hardLink = error else {
+                return XCTFail("unexpected error: \(error)")
+            }
+        }
+    }
 }

@@ -303,11 +303,18 @@ enum MCPServerCommand {
                 ?? contentTypeHint(forExtension: fileURL.pathExtension)
         )
         let overwrite = arguments["overwrite"]?.mcpBool ?? false
+        let confirmedURL = try pathPolicy.validateUploadPath(localPath)
+        guard confirmedURL.standardizedFileURL == fileURL.standardizedFileURL else {
+            throw MCPPathPolicyError.outsideAllowedRoots(
+                path: localPath,
+                roots: pathPolicy.allowedRootsDescription
+            )
+        }
 
         let result = try await client.uploadFile(
             bucket: bucket,
             key: key,
-            fileURL: fileURL,
+            fileURL: confirmedURL,
             contentType: contentType,
             overwrite: overwrite
         )
@@ -331,7 +338,14 @@ enum MCPServerCommand {
         }
         let pathPolicy = try MCPPathPolicy()
         let destination = try pathPolicy.validateDownloadPath(localPath)
-        let result = try await client.downloadFile(bucket: bucket, key: key, to: destination)
+        let confirmedDestination = try pathPolicy.validateDownloadPath(localPath)
+        guard confirmedDestination.standardizedFileURL == destination.standardizedFileURL else {
+            throw MCPPathPolicyError.outsideAllowedRoots(
+                path: localPath,
+                roots: pathPolicy.allowedRootsDescription
+            )
+        }
+        let result = try await client.downloadFile(bucket: bucket, key: key, to: confirmedDestination)
         return textResult(Self.encodeJSON([
             "bucket": .string(result.bucket),
             "key": .string(result.key),

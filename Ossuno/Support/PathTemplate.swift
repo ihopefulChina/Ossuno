@@ -56,14 +56,16 @@ enum PathTemplate {
     }
 
     static func destinationKey(prefix: String, filename: String, applyTemplate: Bool, template: String) -> String {
-        let extra: String
-        if applyTemplate, prefix.isEmpty, !template.isEmpty {
-            extra = expand(template, filename: filename)
-        } else {
-            extra = ""
+        guard applyTemplate, prefix.isEmpty, !template.isEmpty else {
+            return join(prefix, key: filename)
         }
-        let tail = extra.isEmpty ? filename : join(extra, key: filename)
-        return join(prefix, key: tail)
+        let extra = expand(template, filename: filename)
+        // Templates that already name the object ({filename} / {name}) are the
+        // full relative key. Date-only prefixes still get the filename appended.
+        if template.contains("{filename}") || template.contains("{name}") {
+            return extra
+        }
+        return join(extra, key: filename)
     }
 
     static func replacingLastComponent(_ path: String, with name: String) -> String {

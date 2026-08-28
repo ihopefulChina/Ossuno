@@ -489,6 +489,53 @@ struct AppModelTests {
         model.selectSearchKeys(["art/database.dump"])
 
         #expect(model.inspectorObject?.key == "art/database.dump")
+        #expect(model.inspectorSurface == .object(model.inspectorObject!))
+    }
+
+    @Test func inspectorSurfaceUsesSearchSelectionInsteadOfTheHiddenFolder() async {
+        let account = Self.account()
+        let bucket = Self.bucket()
+        let model = Self.model(account: account, bucket: bucket, transport: BrowserSearchTransport())
+        model.searchScope = .bucket
+        model.browser.searchText = "dump"
+        await model.runBucketSearch()
+        model.browser.imagesOnly = false
+        model.browser.objects = [
+            OSSObject(key: "cover.png", size: 10, etag: "a", lastModified: nil, storageClass: "Standard")
+        ]
+        model.browser.replaceSelection(["cover.png"])
+        model.selectSearchKeys(["art/database.dump"])
+
+        #expect(model.inspectorSurface == .object(model.searchSelectedObjects[0]))
+
+        model.browser.searchText = "art/"
+        await model.runBucketSearch()
+        model.selectSearchKeys(["art/hero.png", "art/database.dump"])
+        if case .multiple(let count, let folders, let objects) = model.inspectorSurface {
+            #expect(count == 2)
+            #expect(folders == 0)
+            #expect(Set(objects.map(\.key)) == ["art/hero.png", "art/database.dump"])
+        } else {
+            Issue.record("expected a multi-selection inspector surface, got \(model.inspectorSurface)")
+        }
+
+        model.clearVisibleSelection()
+        #expect(model.inspectorSurface == .searchEmpty)
+    }
+
+    @Test func searchDeleteDialogKeepsPendingNamesAfterResultsClear() async {
+        let account = Self.account()
+        let bucket = Self.bucket()
+        let model = Self.model(account: account, bucket: bucket, transport: BrowserSearchTransport())
+        model.searchScope = .bucket
+        model.browser.searchText = "dump"
+        await model.runBucketSearch()
+        model.selectSearchKeys(["art/database.dump"])
+        model.requestDeleteSelection()
+
+        model.searchController.clear()
+        #expect(model.deleteDialogTitle.contains("database.dump"))
+        #expect(model.deleteDialogMessage.contains("database.dump"))
     }
 
     @Test func confirmedSearchDeleteStillRunsAfterResultsAreCleared() async {

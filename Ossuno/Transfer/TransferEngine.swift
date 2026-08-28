@@ -31,6 +31,7 @@ final class TransferEngine {
     private(set) var journalErrorMessage: String?
 
     private var tasks: [UUID: Task<Void, Never>] = [:]
+    private var taskGenerations: [UUID: UInt64] = [:]
     private var resources: [UUID: TransferResource] = [:]
     private var retryDescriptors: [UUID: RetryDescriptor] = [:]
     private var persistedRetries: [UUID: PersistedTransferRetry] = [:]
@@ -167,6 +168,20 @@ final class TransferEngine {
         let rootLeases = urls.compactMap(SecurityScopeLease.init(url:))
         let expansion = expand(urls)
         var items: [PlannedUpload] = []
+        for failure in expansion.failures {
+            items.append(
+                PlannedUpload(
+                    sourceURL: failure.url,
+                    fileURL: failure.url,
+                    filename: failure.url.lastPathComponent,
+                    contentType: "",
+                    size: 0,
+                    objectKey: "",
+                    resource: TransferResource(retainedResources: rootLeases),
+                    failure: failure.message
+                )
+            )
+        }
         for entry in expansion.files {
             let url = entry.url
             let sourceLease = SecurityScopeLease(url: url)
@@ -339,7 +354,12 @@ final class TransferEngine {
             current.finishedAt = nil
             current.errorMessage = nil
         }
-        startTask(for: id)
+        // A cancelled runUpload/runDownload may still be unwinding. Starting
+        // another task for the same job would share the checkpoint and steal
+        // the pause/cancel intent. Wait for that task to finish.
+        if tasks[id] == nil {
+            startTask(for: id)
+        }
     }
 
     func pauseAll() {
@@ -699,6 +719,10 @@ final class TransferEngine {
         } catch is CancellationError {
             await finishCancellation(id: id)
         } catch {
+            if userIntents[id] == .pause {
+                await finishCancellation(id: id)
+                return
+            }
             // Failed jobs are only retried from scratch (never resumed), so
             // discard the checkpoint now: otherwise a failed multipart upload
             // keeps its uploadID (and billed parts) on OSS forever, and a
@@ -720,10 +744,13 @@ final class TransferEngine {
 
     private func startTask(for id: UUID) {
         guard let descriptor = retryDescriptors[id] else { return }
+        let generation = (taskGenerations[id] ?? 0) &+ 1
+        taskGenerations[id] = generation
         switch descriptor {
         case .upload(let upload):
             tasks[id] = Task { [weak self] in
                 await self?.runPreparedUpload(id: id, upload: upload)
+                self?.taskDidFinish(id, generation: generation)
             }
         case .download(let download):
             tasks[id] = Task { [weak self] in
@@ -737,8 +764,18 @@ final class TransferEngine {
                     speedLimit: download.speedLimit,
                     overwriteIdentity: download.overwriteIdentity
                 )
+                self?.taskDidFinish(id, generation: generation)
             }
         }
+    }
+
+    private func taskDidFinish(_ id: UUID, generation: UInt64) {
+        guard taskGenerations[id] == generation else { return }
+        tasks[id] = nil
+        if jobs.first(where: { $0.id == id })?.status == .queued {
+            startTask(for: id)
+        }
+        pumpFinished()
     }
 
     private func runPreparedUpload(id: UUID, upload: UploadRetryDescriptor) async {
@@ -767,7 +804,14 @@ final class TransferEngine {
                 mutate(id) { job in
                     job.total = prepared.size
                 }
+            } catch is CancellationError {
+                await finishCancellation(id: id)
+                return
             } catch {
+                if userIntents[id] == .pause {
+                    await finishCancellation(id: id)
+                    return
+                }
                 mutate(id) { job in
                     job.status = .failed
                     job.errorMessage = error.localizedDescription
@@ -795,14 +839,26 @@ final class TransferEngine {
     }
 
     private func finishCancellation(id: UUID) async {
-        let intent = userIntents.removeValue(forKey: id) ?? .cancel
+        let status = jobs.first(where: { $0.id == id })?.status
+        let storedIntent = userIntents.removeValue(forKey: id)
+        let intent: UserIntent
+        if let storedIntent {
+            intent = storedIntent
+        } else if status == .paused || status == .queued {
+            // A stale task is exiting after pause/resume already changed status.
+            if status == .queued { return }
+            intent = .pause
+        } else {
+            intent = .cancel
+        }
         if intent == .pause {
-            if jobs.first(where: { $0.id == id })?.status != .queued {
-                mutate(id) { job in
-                    job.status = .paused
-                    job.finishedAt = nil
-                    job.errorMessage = nil
-                }
+            if jobs.first(where: { $0.id == id })?.status == .queued {
+                return
+            }
+            mutate(id) { job in
+                job.status = .paused
+                job.finishedAt = nil
+                job.errorMessage = nil
             }
             return
         }
@@ -906,6 +962,10 @@ final class TransferEngine {
         } catch is CancellationError {
             await finishCancellation(id: id)
         } catch {
+            if userIntents[id] == .pause {
+                await finishCancellation(id: id)
+                return
+            }
             // See the upload path: a failed download must not keep its
             // .partial file around for retries that start from scratch.
             let checkpoint = checkpoints[id]
@@ -959,9 +1019,6 @@ final class TransferEngine {
     }
 
     private func pumpFinished() {
-        tasks = tasks.filter { pair in
-            jobs.first(where: { $0.id == pair.key })?.isActive ?? false
-        }
         updateDockBadge()
     }
 
@@ -1220,6 +1277,7 @@ final class TransferEngine {
     private struct Expansion {
         var files: [ExpandedFile]
         var skipped: Int
+        var failures: [(url: URL, message: String)]
     }
 
     private enum UserIntent {
@@ -1229,6 +1287,7 @@ final class TransferEngine {
 
     nonisolated private static func expand(_ urls: [URL]) -> Expansion {
         var result: [ExpandedFile] = []
+        var failures: [(url: URL, message: String)] = []
         let fm = FileManager.default
         for url in urls {
             var isDir: ObjCBool = false
@@ -1252,12 +1311,17 @@ final class TransferEngine {
                         )
                         result.append(ExpandedFile(url: file, relativePath: relative))
                     }
+                } else {
+                    failures.append((
+                        url,
+                        "无法读取文件夹“\(url.lastPathComponent)”"
+                    ))
                 }
             } else {
                 result.append(ExpandedFile(url: url, relativePath: url.lastPathComponent))
             }
         }
-        return Expansion(files: result, skipped: 0)
+        return Expansion(files: result, skipped: 0, failures: failures)
     }
 
     nonisolated private static func isPackage(_ url: URL) -> Bool {
