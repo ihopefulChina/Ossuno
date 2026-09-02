@@ -11,9 +11,9 @@
 <p align="center">
   <a href="https://ihopefulchina.github.io/Ossuno/"><strong>官网</strong></a>
   &nbsp;·&nbsp;
-  <a href="https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.2-arm64.dmg"><strong>下载 Apple Silicon 版</strong></a>
+  <a href="https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.3-arm64.dmg"><strong>下载 Apple Silicon 版</strong></a>
   &nbsp;·&nbsp;
-  <a href="https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.2-x86_64.dmg"><strong>下载 Intel 版</strong></a>
+  <a href="https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.3-x86_64.dmg"><strong>下载 Intel 版</strong></a>
   &nbsp;·&nbsp;
   <a href="https://www.npmjs.com/package/ossuno-mcp"><strong>使用 ossuno-mcp</strong></a>
   &nbsp;·&nbsp;
@@ -82,7 +82,7 @@ npx ossuno-mcp install  # 一键注册到本机已安装的 AI 客户端
 
 ## 安装
 
-1. 按这台 Mac 的芯片下载 Ossuno：[Apple Silicon（M 系列）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.2-arm64.dmg)或 [Intel](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.2-x86_64.dmg)。不确定时，可在苹果菜单的「关于本机」中查看芯片或处理器。
+1. 按这台 Mac 的芯片下载 Ossuno：[Apple Silicon（M 系列）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.3-arm64.dmg)或 [Intel](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.3-x86_64.dmg)。不确定时，可在苹果菜单的「关于本机」中查看芯片或处理器。
 2. 打开 DMG，把 Ossuno 拖进「应用程序」。
 3. 双击 Ossuno 尝试打开一次。若 macOS 阻止运行，打开「系统设置 → 隐私与安全」，滚动到“安全性”，点击「仍要打开」，在再次出现的警告中点击「打开」（系统可能要求密码或 Touch ID）。
 4. 添加权限最小化的 RAM 子账号，选择地域，然后打开 Bucket。

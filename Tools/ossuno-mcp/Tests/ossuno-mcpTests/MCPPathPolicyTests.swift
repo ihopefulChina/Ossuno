@@ -67,6 +67,19 @@ final class MCPPathPolicyTests: XCTestCase, @unchecked Sendable {
         }
     }
 
+    func testDownloadRejectsAnExistingDestinationBeforeNetworkWork() throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let destination = root.appendingPathComponent("existing.bin")
+        try Data("keep".utf8).write(to: destination)
+        let policy = try MCPPathPolicy(paths: [root.path])
+
+        XCTAssertThrowsError(try policy.prepareDownloadPath(destination.path)) { error in
+            XCTAssertEqual(error as? MCPPathPolicyError, .localFileExists(destination.path))
+        }
+        XCTAssertEqual(try Data(contentsOf: destination), Data("keep".utf8))
+    }
+
     func testEnvironmentAcceptsJSONRootsAndRejectsFilesystemRoot() throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -107,5 +120,54 @@ final class MCPPathPolicyTests: XCTestCase, @unchecked Sendable {
                 return XCTFail("unexpected error: \(error)")
             }
         }
+    }
+
+    func testStagedUploadKeepsValidatedBytesAfterSourcePathIsReplaced() throws {
+        let root = try makeTemporaryDirectory()
+        let outside = try makeTemporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: outside)
+        }
+        let source = root.appendingPathComponent("asset.txt")
+        let outsideFile = outside.appendingPathComponent("secret.txt")
+        try Data("approved".utf8).write(to: source)
+        try Data("secret".utf8).write(to: outsideFile)
+        let policy = try MCPPathPolicy(paths: [root.path])
+
+        let staged = try policy.stageUploadPath(source.path)
+        defer { try? FileManager.default.removeItem(at: staged.fileURL) }
+        try FileManager.default.removeItem(at: source)
+        try FileManager.default.createSymbolicLink(at: source, withDestinationURL: outsideFile)
+
+        XCTAssertEqual(try Data(contentsOf: staged.fileURL), Data("approved".utf8))
+        XCTAssertEqual(staged.size, 8)
+    }
+
+    func testDownloadPublishRejectsParentSwappedToOutsideSymlink() throws {
+        let root = try makeTemporaryDirectory()
+        let outside = try makeTemporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: outside)
+        }
+        let parent = root.appendingPathComponent("slot", isDirectory: true)
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        let destination = parent.appendingPathComponent("object.bin")
+        let policy = try MCPPathPolicy(paths: [root.path])
+        let target = try policy.prepareDownloadPath(destination.path)
+        let movedParent = root.appendingPathComponent("slot-before-swap", isDirectory: true)
+        try FileManager.default.moveItem(at: parent, to: movedParent)
+        try FileManager.default.createSymbolicLink(at: parent, withDestinationURL: outside)
+        let downloaded = root.appendingPathComponent("downloaded.tmp")
+        try Data("downloaded".utf8).write(to: downloaded)
+
+        XCTAssertThrowsError(try target.publish(downloaded)) { error in
+            guard case MCPPathPolicyError.symbolicLink = error else {
+                return XCTFail("unexpected error: \(error)")
+            }
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: outside.appendingPathComponent("object.bin").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: movedParent.appendingPathComponent("object.bin").path))
     }
 }

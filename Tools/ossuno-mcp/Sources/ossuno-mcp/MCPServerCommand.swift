@@ -291,7 +291,9 @@ enum MCPServerCommand {
             throw MissingArgumentError("local_path")
         }
         let pathPolicy = try MCPPathPolicy()
-        let fileURL = try pathPolicy.validateUploadPath(localPath)
+        let stagedUpload = try pathPolicy.stageUploadPath(localPath)
+        defer { try? FileManager.default.removeItem(at: stagedUpload.fileURL) }
+        let fileURL = stagedUpload.originalURL
         var key = arguments["key"]?.mcpString ?? ""
         if key.isEmpty {
             key = fileURL.lastPathComponent
@@ -303,18 +305,10 @@ enum MCPServerCommand {
                 ?? contentTypeHint(forExtension: fileURL.pathExtension)
         )
         let overwrite = arguments["overwrite"]?.mcpBool ?? false
-        let confirmedURL = try pathPolicy.validateUploadPath(localPath)
-        guard confirmedURL.standardizedFileURL == fileURL.standardizedFileURL else {
-            throw MCPPathPolicyError.outsideAllowedRoots(
-                path: localPath,
-                roots: pathPolicy.allowedRootsDescription
-            )
-        }
-
         let result = try await client.uploadFile(
             bucket: bucket,
             key: key,
-            fileURL: confirmedURL,
+            fileURL: stagedUpload.fileURL,
             contentType: contentType,
             overwrite: overwrite
         )
@@ -337,15 +331,8 @@ enum MCPServerCommand {
             throw MissingArgumentError("local_path")
         }
         let pathPolicy = try MCPPathPolicy()
-        let destination = try pathPolicy.validateDownloadPath(localPath)
-        let confirmedDestination = try pathPolicy.validateDownloadPath(localPath)
-        guard confirmedDestination.standardizedFileURL == destination.standardizedFileURL else {
-            throw MCPPathPolicyError.outsideAllowedRoots(
-                path: localPath,
-                roots: pathPolicy.allowedRootsDescription
-            )
-        }
-        let result = try await client.downloadFile(bucket: bucket, key: key, to: confirmedDestination)
+        let target = try pathPolicy.prepareDownloadPath(localPath)
+        let result = try await client.downloadFile(bucket: bucket, key: key, to: target)
         return textResult(Self.encodeJSON([
             "bucket": .string(result.bucket),
             "key": .string(result.key),

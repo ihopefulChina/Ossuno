@@ -66,4 +66,35 @@ final class InstallAndVersionTests: XCTestCase, @unchecked Sendable {
         XCTAssertTrue(result.contains("command = \"github-mcp\""))
         XCTAssertEqual(InstallCommand.tomlTableName("[mcp_servers.github] # github"), "mcp_servers.github")
     }
+
+    func testTOMLReinstallRecognizesQuotedTableAndManagedKeys() {
+        let source = """
+        [mcp_servers."ossuno"] # quoted spelling is the same TOML table
+        "command" = "old-command"
+        'args' = ["old"]
+        "env" = { OSSUNO_MCP_DEFAULT_BUCKET = "prod" }
+        " command " = "must-stay"
+
+        [mcp_servers.github]
+        command = "github-mcp"
+        """
+
+        let result = InstallCommand.upsertTOMLSection(
+            source,
+            section: "mcp_servers.ossuno",
+            body: [
+                "command = \"npx\"",
+                "args = [\"-y\", \"ossuno-mcp\"]",
+            ],
+            removing: false
+        )
+
+        XCTAssertEqual(result.components(separatedBy: "[mcp_servers.ossuno]").count - 1, 1)
+        XCTAssertFalse(result.contains("old-command"))
+        XCTAssertFalse(result.contains("'args'"))
+        XCTAssertTrue(result.contains("\"env\" = { OSSUNO_MCP_DEFAULT_BUCKET = \"prod\" }"))
+        XCTAssertTrue(result.contains("\" command \" = \"must-stay\""))
+        XCTAssertTrue(result.contains("[mcp_servers.github]"))
+        XCTAssertEqual(InstallCommand.tomlTableName("[mcp_servers.\"ossuno\"] # note"), "mcp_servers.ossuno")
+    }
 }

@@ -118,17 +118,43 @@ struct TransferEngineTests {
         #expect(engine.jobs.map(\.status) == [.paused, .paused])
     }
 
-    @Test func resumeDoesNotStartWhileAPausedJobStillHasAnInFlightTask() {
+    @Test func resumedQueuedUploadReportsItsRealFailureInsteadOfReturningToPaused() async throws {
+        let urls = try (1...2).map { try Self.temporaryFile(named: "pause-queued-\($0).txt") }
+        defer { urls.forEach { try? FileManager.default.removeItem(at: $0) } }
+        let transport = ControllableUploadTransport()
         let engine = TransferEngine()
-        var running = Self.persistedJob(status: .running)
-        running.id = UUID()
-        engine.jobs = [running]
-        engine.pause(running.id)
+        engine.enqueue(
+            plan: TransferEngine.UploadPlan(
+                items: urls.enumerated().map { index, url in
+                    Self.item(
+                        url: url,
+                        key: "pause-queued-\(index + 1).txt",
+                        resource: TransferResource()
+                    )
+                },
+                skipped: 0
+            ),
+            client: Self.client(transport: transport),
+            account: Self.account(),
+            bucket: nil,
+            settings: Self.settings(concurrency: 1)
+        )
+        try await Self.waitUntil { await transport.requestCount == 1 }
+        let queuedID = try #require(engine.jobs.last?.id)
 
-        #expect(engine.jobs.first?.status == .paused)
-        engine.resume(running.id)
-        #expect(engine.jobs.first?.status == .paused || engine.jobs.first?.status == .queued)
-        #expect(engine.jobs.count == 1)
+        engine.pause(queuedID)
+        engine.resume(queuedID)
+        #expect(engine.jobs.last?.status == .queued)
+
+        let firstPath = try #require(await transport.requestPaths.first)
+        await transport.resume(path: firstPath)
+        try await Self.waitUntil { await transport.requestCount == 2 }
+        let secondPath = try #require(await transport.requestPaths.last)
+        await transport.fail(path: secondPath)
+        try await Self.waitUntil { engine.jobs.last?.isActive == false }
+
+        #expect(engine.jobs.last?.status == .failed)
+        #expect(engine.jobs.last?.errorMessage != nil)
     }
 
     @Test func rootUploadWithFilenameTemplateDoesNotNestTheName() async throws {
@@ -1646,7 +1672,7 @@ private actor RetryTransport: OSSHTTPTransport {
 
 private actor ControllableUploadTransport: OSSHTTPTransport {
     private(set) var requestPaths: [String] = []
-    private var continuations: [String: CheckedContinuation<OSSHTTPResult, Never>] = [:]
+    private var continuations: [String: CheckedContinuation<OSSHTTPResult, Error>] = [:]
 
     var requestCount: Int { requestPaths.count }
 
@@ -1674,13 +1700,19 @@ private actor ControllableUploadTransport: OSSHTTPTransport {
         }
         let path = request.url?.path ?? UUID().uuidString
         requestPaths.append(path)
-        return await withCheckedContinuation { continuation in
+        return try await withCheckedThrowingContinuation { continuation in
             continuations[path] = continuation
         }
     }
 
     func resume(path: String) {
         continuations.removeValue(forKey: path)?.resume(returning: Self.success)
+    }
+
+    func fail(path: String) {
+        continuations.removeValue(forKey: path)?.resume(
+            throwing: URLError(.cannotConnectToHost)
+        )
     }
 
     func resumeAll() {

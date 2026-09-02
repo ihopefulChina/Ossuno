@@ -276,16 +276,12 @@ final class MCPOSSClient: @unchecked Sendable {
         var size: Int64
     }
 
-    func downloadFile(bucket: String, key: String, to destination: URL) async throws -> DownloadResult {
-        // Never silently overwrite local files — mirrors the GUI app's boundary.
-        guard !FileManager.default.fileExists(atPath: destination.path) else {
-            throw OSSServiceError(
-                statusCode: 0,
-                code: "LocalFileExists",
-                message: "本地已存在同名文件，未覆盖：\(destination.path)。请换一个保存路径，或先删除该文件。",
-                requestId: ""
-            )
-        }
+    func downloadFile(
+        bucket: String,
+        key: String,
+        to target: MCPPathPolicy.DownloadTarget
+    ) async throws -> DownloadResult {
+        let destination = target.destination
         let request = try makeSignedRequest(method: "GET", bucket: bucket, key: key)
         // Download task streams to a temp file — memory stays flat for huge objects.
         let (tempURL, response): (URL, URLResponse)
@@ -299,6 +295,7 @@ final class MCPOSSClient: @unchecked Sendable {
                 requestId: ""
             )
         }
+        defer { try? FileManager.default.removeItem(at: tempURL) }
         guard let http = response as? HTTPURLResponse else {
             try? FileManager.default.removeItem(at: tempURL)
             throw OSSServiceError(statusCode: 0, code: "InvalidResponse", message: "非 HTTP 响应", requestId: "")
@@ -318,24 +315,7 @@ final class MCPOSSClient: @unchecked Sendable {
             try? FileManager.default.removeItem(at: tempURL)
             throw OSSXML.parseError(body, status: http.statusCode)
         }
-        let parent = destination.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
-        let staging = parent.appendingPathComponent(
-            ".\(destination.lastPathComponent).ossuno-mcp-\(UUID().uuidString).tmp"
-        )
-        do {
-            // URLSession's temp directory and the requested destination may be
-            // on different volumes. Copy into the destination directory, then
-            // rename locally so the final path never exposes a partial file.
-            try FileManager.default.copyItem(at: tempURL, to: staging)
-            try FileManager.default.moveItem(at: staging, to: destination)
-            try? FileManager.default.removeItem(at: tempURL)
-        } catch {
-            try? FileManager.default.removeItem(at: staging)
-            try? FileManager.default.removeItem(at: tempURL)
-            throw error
-        }
-        let size = (try FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? NSNumber)?.int64Value ?? 0
+        let size = try target.publish(tempURL)
         return DownloadResult(
             bucket: bucket,
             key: key,

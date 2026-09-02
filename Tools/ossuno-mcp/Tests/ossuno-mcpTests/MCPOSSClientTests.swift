@@ -337,9 +337,11 @@ final class MCPOSSClientTests: XCTestCase, @unchecked Sendable {
             .appendingPathComponent("ossuno-mcp-download-\(UUID().uuidString)", isDirectory: true)
         let destination = directory.appendingPathComponent("nested/object.txt")
         defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let target = try MCPPathPolicy(paths: [directory.path]).prepareDownloadPath(destination.path)
 
         let result = try await makeClient().downloadFile(
-            bucket: "bucket", key: "object.txt", to: destination
+            bucket: "bucket", key: "object.txt", to: target
         )
         XCTAssertEqual(result.size, 10)
         XCTAssertEqual(try String(contentsOf: destination, encoding: .utf8), "downloaded")

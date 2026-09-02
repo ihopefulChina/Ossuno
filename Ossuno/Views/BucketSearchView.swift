@@ -138,9 +138,9 @@ struct BucketSearchFilterMenu: View {
             }
             Section("大小") {
                 filterButton(modelRef, "任意大小", minimum: nil, maximum: nil)
-                filterButton(modelRef, "大于 10 MB", minimum: 10 * 1_024 * 1_024, maximum: nil)
-                filterButton(modelRef, "大于 100 MB", minimum: 100 * 1_024 * 1_024, maximum: nil)
-                filterButton(modelRef, "小于 1 MB", minimum: nil, maximum: 1 * 1_024 * 1_024)
+                filterButton(modelRef, "至少 10 MB", minimum: 10 * 1_024 * 1_024, maximum: nil)
+                filterButton(modelRef, "至少 100 MB", minimum: 100 * 1_024 * 1_024, maximum: nil)
+                filterButton(modelRef, "不超过 1 MB", minimum: nil, maximum: 1 * 1_024 * 1_024)
             }
             Section("修改时间") {
                 dateButton(modelRef, "任意时间", range: .any)

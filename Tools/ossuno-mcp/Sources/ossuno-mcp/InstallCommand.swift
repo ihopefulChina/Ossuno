@@ -406,10 +406,11 @@ enum InstallCommand {
     ) -> String {
         var lines = source.components(separatedBy: "\n")
         let header = "[\(section)]"
+        let targetPath = tomlDottedKey(section)
         var index = 0
         var replaced = false
         while index < lines.count {
-            if tomlTableName(lines[index]) == section {
+            if tomlTablePath(lines[index]) == targetPath {
                 var end = index + 1
                 while end < lines.count {
                     if tomlTableName(lines[end]) != nil { break }
@@ -445,14 +446,7 @@ enum InstallCommand {
 
     /// Table header name, ignoring trailing comments (`[a.b] # note`).
     static func tomlTableName(_ line: String) -> String? {
-        var trimmed = line.trimmingCharacters(in: .whitespaces)
-        if let comment = trimmed.firstIndex(of: "#") {
-            trimmed = String(trimmed[..<comment]).trimmingCharacters(in: .whitespaces)
-        }
-        guard trimmed.hasPrefix("["), trimmed.hasSuffix("]"), trimmed.count >= 2 else {
-            return nil
-        }
-        return String(trimmed.dropFirst().dropLast())
+        tomlTablePath(line)?.joined(separator: ".")
     }
 
     private static func preservedTOMLLines(_ oldBody: ArraySlice<String>) -> [String] {
@@ -467,13 +461,126 @@ enum InstallCommand {
     }
 
     private static func tomlKey(_ line: String) -> String? {
-        var trimmed = line.trimmingCharacters(in: .whitespaces)
-        if let comment = trimmed.firstIndex(of: "#"), !trimmed.hasPrefix("\"") {
-            trimmed = String(trimmed[..<comment]).trimmingCharacters(in: .whitespaces)
+        guard let equals = firstUnquoted("=", in: line) else { return nil }
+        return tomlDottedKey(String(line[..<equals]))?.joined(separator: ".")
+    }
+
+    private static func tomlTablePath(_ line: String) -> [String]? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("[") else { return nil }
+        var quote: Character?
+        var escaped = false
+        var closing: String.Index?
+        var index = trimmed.index(after: trimmed.startIndex)
+        while index < trimmed.endIndex {
+            let character = trimmed[index]
+            if let activeQuote = quote {
+                if activeQuote == "\"", character == "\\", !escaped {
+                    escaped = true
+                } else if character == activeQuote, !escaped {
+                    quote = nil
+                } else {
+                    escaped = false
+                }
+            } else if character == "\"" || character == "'" {
+                quote = character
+                escaped = false
+            } else if character == "]" {
+                closing = index
+                break
+            }
+            index = trimmed.index(after: index)
         }
-        guard let equals = trimmed.firstIndex(of: "=") else { return nil }
-        let key = String(trimmed[..<equals]).trimmingCharacters(in: .whitespaces)
-        return key.isEmpty ? nil : key
+        guard quote == nil, let closing else { return nil }
+        let remainder = trimmed[trimmed.index(after: closing)...]
+            .trimmingCharacters(in: .whitespaces)
+        guard remainder.isEmpty || remainder.hasPrefix("#") else { return nil }
+        return tomlDottedKey(String(trimmed[trimmed.index(after: trimmed.startIndex)..<closing]))
+    }
+
+    /// Normalizes TOML bare, basic-quoted and literal-quoted dotted keys to
+    /// semantic path segments. Values remain byte-for-byte preserved.
+    private static func tomlDottedKey(_ raw: String) -> [String]? {
+        var result: [String] = []
+        var segment = ""
+        var quote: Character?
+        var escaped = false
+        var wasQuoted = false
+        var finishedQuoted = false
+        var index = raw.startIndex
+
+        func appendSegment() -> Bool {
+            let value = wasQuoted ? segment : segment.trimmingCharacters(in: .whitespaces)
+            guard !value.isEmpty else { return false }
+            result.append(value)
+            segment = ""
+            wasQuoted = false
+            finishedQuoted = false
+            return true
+        }
+
+        while index < raw.endIndex {
+            let character = raw[index]
+            if let activeQuote = quote {
+                if activeQuote == "\"", escaped {
+                    switch character {
+                    case "\"", "\\": segment.append(character)
+                    case "n": segment.append("\n")
+                    case "r": segment.append("\r")
+                    case "t": segment.append("\t")
+                    default: return nil
+                    }
+                    escaped = false
+                } else if activeQuote == "\"", character == "\\" {
+                    escaped = true
+                } else if character == activeQuote {
+                    quote = nil
+                    finishedQuoted = true
+                } else {
+                    segment.append(character)
+                }
+            } else if character == "\"" || character == "'" {
+                guard segment.isEmpty, !wasQuoted else { return nil }
+                quote = character
+                wasQuoted = true
+            } else if character == "." {
+                guard appendSegment() else { return nil }
+            } else if character.isWhitespace {
+                // Whitespace is allowed around TOML dotted-key segments.
+            } else {
+                guard !finishedQuoted, !wasQuoted else { return nil }
+                segment.append(character)
+            }
+            index = raw.index(after: index)
+        }
+        guard quote == nil, !escaped, appendSegment() else { return nil }
+        return result
+    }
+
+    private static func firstUnquoted(_ needle: Character, in line: String) -> String.Index? {
+        var quote: Character?
+        var escaped = false
+        var index = line.startIndex
+        while index < line.endIndex {
+            let character = line[index]
+            if let activeQuote = quote {
+                if activeQuote == "\"", character == "\\", !escaped {
+                    escaped = true
+                } else if character == activeQuote, !escaped {
+                    quote = nil
+                } else {
+                    escaped = false
+                }
+            } else if character == "\"" || character == "'" {
+                quote = character
+            } else if character == needle {
+                return index
+            } else if character == "#" {
+                return nil
+            }
+            index = line.index(after: index)
+        }
+        return nil
     }
 
     fileprivate static func tomlString(_ value: String) -> String {

@@ -338,9 +338,6 @@ final class TransferEngine {
             current.finishedAt = nil
             current.errorMessage = nil
         }
-        if job.status == .queued {
-            tasks[id] = nil
-        }
         pumpFinished()
     }
 
@@ -661,7 +658,9 @@ final class TransferEngine {
         expectedDestination: OSSObjectIdentity?
     ) async {
         guard await waitForSlot(id: id, kind: .upload) else {
-            if jobs.first(where: { $0.id == id })?.status == .cancelled {
+            if Task.isCancelled {
+                await finishCancellation(id: id)
+            } else if jobs.first(where: { $0.id == id })?.status == .cancelled {
                 finishResource(id)
             }
             return
@@ -902,7 +901,9 @@ final class TransferEngine {
         overwriteIdentity: LocalFileIdentity?
     ) async {
         guard await waitForSlot(id: id, kind: .download) else {
-            if jobs.first(where: { $0.id == id })?.status == .cancelled {
+            if Task.isCancelled {
+                await finishCancellation(id: id)
+            } else if jobs.first(where: { $0.id == id })?.status == .cancelled {
                 finishResource(id)
             }
             return
