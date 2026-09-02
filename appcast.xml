@@ -3,33 +3,31 @@
     <channel>
         <title>Ossuno</title>
         <item>
-            <title>1.0.2</title>
-            <pubDate>Fri, 28 Aug 2026 17:48:13 +0800</pubDate>
-            <link>https://github.com/ihopefulChina/Ossuno/releases/tag/v1.0.2</link>
-            <sparkle:version>7</sparkle:version>
-            <sparkle:shortVersionString>1.0.2</sparkle:shortVersionString>
+            <title>1.0.3</title>
+            <pubDate>Wed, 02 Sep 2026 11:31:01 +0800</pubDate>
+            <link>https://github.com/ihopefulChina/Ossuno/releases/tag/v1.0.3</link>
+            <sparkle:version>9</sparkle:version>
+            <sparkle:shortVersionString>1.0.3</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# Ossuno 1.0.2
+            <description sparkle:format="markdown"><![CDATA[# Ossuno 1.0.3
 
-这是一次稳定性更新，修复搜索检查器、上传路径模板、传输暂停/继续，以及 `ossuno-mcp` 的安装配置与本地路径策略。
+这是一次安全性与稳定性更新，修复 MCP 本地路径边界、排队传输暂停/继续、安装配置兼容和 Bucket 大小筛选文案，并补齐桌面端与 npm 的发布追溯。
 
-## 下载 Ossuno 1.0.2
+## 下载 Ossuno 1.0.3
 
-- [Apple Silicon 版（M 系列芯片）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.2-arm64.dmg)
-- [Intel 版（x86_64）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.2-x86_64.dmg)
+- [Apple Silicon 版（M 系列芯片）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.3-arm64.dmg)
+- [Intel 版（x86_64）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.3-x86_64.dmg)
 
 两个安装包都需要 macOS 15 或更高版本。不确定芯片类型时，可在苹果菜单的「关于本机」中查看“芯片”或“处理器”。
 
 ## 修复
 
-- Bucket 搜索和大文件筛选里打开「信息」现在显示所选搜索结果，而不是背后隐藏的文件夹列表；下载和删除按钮与标题一致。搜索结果刷新后，删除确认仍会列出待删文件名。
-- 账号路径模板若包含 `{filename}` 或 `{name}`，上传不再把文件名再拼一层（例如 `assets/hero.png/hero.png`）。
-- 暂停正在传输的任务后再继续，不会叠跑两次上传/下载；转换 HEIC 或等待 iCloud 下载时取消，会按暂停/取消处理，而不是记成失败。
-- 无法读取的文件夹上传会明确失败，而不是静默跳过。把同名文件和同名文件夹一起拖到访达时，会像访达一样自动编号，避免本地路径冲突。
-- 重新运行 `ossuno-mcp install` 会保留已有的 `env`（默认 Bucket、允许目录等），也不会因为 TOML 表头带注释而截断后面的配置。
-- MCP 默认允许本机系统临时目录（不只是 `/tmp`）；上传会拒绝硬链接，避免从允许目录里读到目录外的文件。
-- 官网顶部「下载」会在识别芯片后改成 Apple Silicon / Intel 文案，避免未标注却始终指向 arm64 安装包。
+- MCP 上传会在网络等待前固定已验证文件的可信快照，下载会在最终落盘时从允许目录重新安全解析路径，阻止文件或父目录被链接替换后越过本地目录白名单。
+- 暂停排队中的传输再继续时，会等待旧任务完成取消清理；恢复后的真实网络错误不再被误记为暂停。
+- `ossuno-mcp install` 能识别 TOML 的引号表名和引号键，不再为同一个 `mcp_servers.ossuno` 表写出重复配置。
+- Bucket 大小筛选改为“至少 10/100 MB”和“不超过 1 MB”，与实际包含边界一致。
+- 同步发布 `ossuno-mcp` 1.0.3 的主包与 Apple Silicon、Intel 平台包。
 
 ## 系统要求
 
@@ -46,35 +44,33 @@
 
 仅在确认安装包来自本仓库的 GitHub Releases 时放行。详细背景见 [Apple 的安全打开说明](https://support.apple.com/zh-cn/102445)。
 ]]></description>
-            <enclosure url="https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.2/Ossuno-1.0.2-arm64.dmg" length="4385269" type="application/octet-stream" sparkle:edSignature="p6HCIlTVJ+v76B4a2FdpFlnFz0EHhZB/baNBrSmplbS5pR4TESqDpvfStDHqXxWSgQ+mjy0D1FyedGuzaBK1CA=="/>
+            <enclosure url="https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.3/Ossuno-1.0.3-arm64.dmg" length="4385189" type="application/octet-stream" sparkle:edSignature="IKOlbOjZ9D4YAHuebZwaqFIUslIZLBRqmN2EQ4fcNRVGYTqL83heQBVPOtxcSyaJWEmrjhwedEIdVobZV9k8Aw=="/>
         </item>
         <item>
-            <title>1.0.2</title>
-            <pubDate>Fri, 28 Aug 2026 17:47:04 +0800</pubDate>
-            <link>https://github.com/ihopefulChina/Ossuno/releases/tag/v1.0.2</link>
-            <sparkle:version>6</sparkle:version>
-            <sparkle:shortVersionString>1.0.2</sparkle:shortVersionString>
+            <title>1.0.3</title>
+            <pubDate>Wed, 02 Sep 2026 11:29:33 +0800</pubDate>
+            <link>https://github.com/ihopefulChina/Ossuno/releases/tag/v1.0.3</link>
+            <sparkle:version>8</sparkle:version>
+            <sparkle:shortVersionString>1.0.3</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[# Ossuno 1.0.2
+            <description sparkle:format="markdown"><![CDATA[# Ossuno 1.0.3
 
-这是一次稳定性更新，修复搜索检查器、上传路径模板、传输暂停/继续，以及 `ossuno-mcp` 的安装配置与本地路径策略。
+这是一次安全性与稳定性更新，修复 MCP 本地路径边界、排队传输暂停/继续、安装配置兼容和 Bucket 大小筛选文案，并补齐桌面端与 npm 的发布追溯。
 
-## 下载 Ossuno 1.0.2
+## 下载 Ossuno 1.0.3
 
-- [Apple Silicon 版（M 系列芯片）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.2-arm64.dmg)
-- [Intel 版（x86_64）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.2-x86_64.dmg)
+- [Apple Silicon 版（M 系列芯片）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.3-arm64.dmg)
+- [Intel 版（x86_64）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.3-x86_64.dmg)
 
 两个安装包都需要 macOS 15 或更高版本。不确定芯片类型时，可在苹果菜单的「关于本机」中查看“芯片”或“处理器”。
 
 ## 修复
 
-- Bucket 搜索和大文件筛选里打开「信息」现在显示所选搜索结果，而不是背后隐藏的文件夹列表；下载和删除按钮与标题一致。搜索结果刷新后，删除确认仍会列出待删文件名。
-- 账号路径模板若包含 `{filename}` 或 `{name}`，上传不再把文件名再拼一层（例如 `assets/hero.png/hero.png`）。
-- 暂停正在传输的任务后再继续，不会叠跑两次上传/下载；转换 HEIC 或等待 iCloud 下载时取消，会按暂停/取消处理，而不是记成失败。
-- 无法读取的文件夹上传会明确失败，而不是静默跳过。把同名文件和同名文件夹一起拖到访达时，会像访达一样自动编号，避免本地路径冲突。
-- 重新运行 `ossuno-mcp install` 会保留已有的 `env`（默认 Bucket、允许目录等），也不会因为 TOML 表头带注释而截断后面的配置。
-- MCP 默认允许本机系统临时目录（不只是 `/tmp`）；上传会拒绝硬链接，避免从允许目录里读到目录外的文件。
-- 官网顶部「下载」会在识别芯片后改成 Apple Silicon / Intel 文案，避免未标注却始终指向 arm64 安装包。
+- MCP 上传会在网络等待前固定已验证文件的可信快照，下载会在最终落盘时从允许目录重新安全解析路径，阻止文件或父目录被链接替换后越过本地目录白名单。
+- 暂停排队中的传输再继续时，会等待旧任务完成取消清理；恢复后的真实网络错误不再被误记为暂停。
+- `ossuno-mcp install` 能识别 TOML 的引号表名和引号键，不再为同一个 `mcp_servers.ossuno` 表写出重复配置。
+- Bucket 大小筛选改为“至少 10/100 MB”和“不超过 1 MB”，与实际包含边界一致。
+- 同步发布 `ossuno-mcp` 1.0.3 的主包与 Apple Silicon、Intel 平台包。
 
 ## 系统要求
 
@@ -91,7 +87,7 @@
 
 仅在确认安装包来自本仓库的 GitHub Releases 时放行。详细背景见 [Apple 的安全打开说明](https://support.apple.com/zh-cn/102445)。
 ]]></description>
-            <enclosure url="https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.2/Ossuno-1.0.2-x86_64.dmg" length="4603282" type="application/octet-stream" sparkle:edSignature="q30iqvTFIpwN04O2aLxqeYN2UQnZNsUVGaNNqjVj+/hWBY5h5sSie2r9fyuOvPltsDC3zfTxJMd8n8JcIqGaCg=="/>
+            <enclosure url="https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.3/Ossuno-1.0.3-x86_64.dmg" length="4603316" type="application/octet-stream" sparkle:edSignature="6Cq/+YDsyeU3FB4oW2wReD2b/BeaEnYCD/os5dna1iDSXGJF0/sBCMG7ezlzJpjWSDfPEglLwjJTGs+rhcTGCg=="/>
         </item>
     </channel>
 </rss>
