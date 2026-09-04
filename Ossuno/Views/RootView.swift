@@ -581,13 +581,7 @@ private struct WorkspaceView: View {
         } detail: {
             BrowserView(showFileImporter: $showFileImporter)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if model.transfers.hasJobs {
-                TransferTray()
-                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .animation(reduceMotion ? nil : Motion.settle, value: model.transfers.hasJobs)
+        .navigationSplitViewStyle(.balanced)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {

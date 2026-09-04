@@ -18,18 +18,11 @@ struct SidebarView: View {
         )) {
             Section("账号") {
                 ForEach(model.accounts) { account in
-                    Label {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(account.displayName)
-                                .lineLimit(1)
-                            Text(account.region.name)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                    } icon: {
-                        Image(systemName: account.id == model.selectedAccountID ? "cloud.fill" : "cloud")
-                    }
+                    SidebarItemLabel(
+                        title: account.displayName,
+                        subtitle: account.region.name,
+                        systemImage: account.id == model.selectedAccountID ? "cloud.fill" : "cloud"
+                    )
                     .tag(SidebarSelection.account(account.id))
                     .accessibilityValue(account.id == model.selectedAccountID ? "当前账号" : "")
                     .contextMenu {
@@ -57,18 +50,11 @@ struct SidebarView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(model.buckets) { bucket in
-                        Label {
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(bucket.name)
-                                    .lineLimit(1)
-                                Text(bucket.regionLabel)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                        } icon: {
-                            Image(systemName: "externaldrive")
-                        }
+                        SidebarItemLabel(
+                            title: bucket.name,
+                            subtitle: bucket.regionLabel,
+                            systemImage: "externaldrive"
+                        )
                         .tag(SidebarSelection.bucket(bucket.name))
                     }
                 }
@@ -77,18 +63,11 @@ struct SidebarView: View {
             if !model.favorites.items.isEmpty {
                 Section("常用") {
                     ForEach(model.favorites.items) { favorite in
-                        Label {
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(favorite.name)
-                                    .lineLimit(1)
-                                Text(favorite.bucketName)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                        } icon: {
-                            Image(systemName: favorite.prefix.isEmpty ? "externaldrive" : "folder")
-                        }
+                        SidebarItemLabel(
+                            title: favorite.name,
+                            subtitle: favorite.bucketName,
+                            systemImage: favorite.prefix.isEmpty ? "externaldrive" : "folder"
+                        )
                         .tag(SidebarSelection.favorite(favorite.id))
                         .contextMenu {
                             Button("从常用中移除") {
@@ -128,6 +107,28 @@ struct SidebarView: View {
             Button("取消", role: .cancel) { accountToDelete = nil }
         } message: {
             Text("只删除这台 Mac 上的登录信息，不会改动云端数据。")
+        }
+    }
+}
+
+private struct SidebarItemLabel: View {
+    let title: String
+    let subtitle: String
+    let systemImage: String
+
+    var body: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        } icon: {
+            Image(systemName: systemImage)
+                .symbolRenderingMode(.hierarchical)
         }
     }
 }

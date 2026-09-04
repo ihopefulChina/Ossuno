@@ -1,6 +1,8 @@
 #if DEBUG
 import AppKit
+import Darwin
 import Foundation
+import ScreenCaptureKit
 import Security
 
 @MainActor
@@ -15,6 +17,23 @@ enum ScreenshotDemo {
         if arguments.contains("--ossuno-screenshot-browser") { return .browser }
         if arguments.contains("--ossuno-screenshot-account") { return .account }
         return nil
+    }
+
+    static var accountShowsAdvanced: Bool {
+        accountShowsAdvanced(arguments: ProcessInfo.processInfo.arguments)
+    }
+
+    static func accountShowsAdvanced(arguments: [String]) -> Bool {
+        arguments.contains("--ossuno-screenshot-account")
+            && arguments.contains("--ossuno-screenshot-account-advanced")
+    }
+
+    static func outputURL(arguments: [String] = ProcessInfo.processInfo.arguments) -> URL? {
+        let prefix = "--ossuno-screenshot-output="
+        guard let argument = arguments.first(where: { $0.hasPrefix(prefix) }) else { return nil }
+        let path = String(argument.dropFirst(prefix.count))
+        guard !path.isEmpty else { return nil }
+        return URL(fileURLWithPath: path)
     }
 
     static var forcedAppearance: NSAppearance? {
@@ -140,9 +159,24 @@ enum ScreenshotDemo {
 
     static func prepareWindow() {
         applyAppearance()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            guard let window = NSApp.windows.first(where: { $0.canBecomeKey }) else { return }
+        schedulePreparedCapture(attempt: 0)
+    }
+
+    private static func schedulePreparedCapture(attempt: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + (attempt == 0 ? 0.25 : 0.2)) {
             applyAppearance()
+            let window = NSApp.windows.first(where: { $0.identifier == WindowActions.workspaceID })
+                ?? NSApp.windows.first(where: \.canBecomeKey)
+                ?? NSApp.windows.first
+            guard let window else {
+                if attempt < 20 {
+                    schedulePreparedCapture(attempt: attempt + 1)
+                } else {
+                    fputs("screenshot: no window\n", stderr)
+                    exitIfCapturing()
+                }
+                return
+            }
             window.appearance = NSApp.appearance
             let size = NSSize(width: 1240, height: 800)
             let visible = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? NSRect(origin: .zero, size: size)
@@ -155,7 +189,126 @@ enum ScreenshotDemo {
             )
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
+            guard outputURL() != nil else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + (currentMode == .account ? 1.8 : 1.0)) {
+                Task { @MainActor in
+                    await writeRequestedScreenshot()
+                    exitIfCapturing()
+                }
+            }
         }
+    }
+
+    private static func exitIfCapturing() {
+        guard outputURL() != nil else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            Darwin.exit(0)
+        }
+    }
+
+    static func writeRequestedScreenshot() async {
+        guard let url = outputURL() else { return }
+        do {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let data = await captureWithScreenCaptureKit() ?? capturePNG()
+            guard let data else {
+                fputs("screenshot: capture failed\n", stderr)
+                return
+            }
+            try data.write(to: url)
+            fputs("screenshot: wrote \(url.path)\n", stderr)
+        } catch {
+            fputs("screenshot: \(error.localizedDescription)\n", stderr)
+        }
+    }
+
+    private static func captureWithScreenCaptureKit() async -> Data? {
+        do {
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            let bundleID = Bundle.main.bundleIdentifier
+            let window = content.windows
+                .filter { $0.owningApplication?.bundleIdentifier == bundleID }
+                .max { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
+            guard let window else {
+                fputs("screenshot: ScreenCaptureKit found no window\n", stderr)
+                return nil
+            }
+            let filter = SCContentFilter(desktopIndependentWindow: window)
+            let configuration = SCStreamConfiguration()
+            configuration.showsCursor = false
+            configuration.width = Int(window.frame.width * 2)
+            configuration.height = Int(window.frame.height * 2)
+            let image = try await SCScreenshotManager.captureImage(
+                contentFilter: filter,
+                configuration: configuration
+            )
+            return NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
+        } catch {
+            fputs("screenshot: ScreenCaptureKit \(error.localizedDescription)\n", stderr)
+            return nil
+        }
+    }
+
+    static func capturePNG() -> Data? {
+        let windows = NSApp.windows.filter { $0.isVisible && $0.alphaValue > 0 }
+        guard let workspace = windows.first(where: { $0.identifier == WindowActions.workspaceID })
+                ?? windows.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }),
+              let workspaceImage = rasterize(workspace)
+        else { return nil }
+
+        let sheet = workspace.attachedSheet ?? windows.first(where: \.isSheet)
+        guard let sheet, let sheetImage = rasterize(sheet) else {
+            return png(from: workspaceImage)
+        }
+
+        let canvas = NSImage(size: workspaceImage.size)
+        canvas.lockFocus()
+        workspaceImage.draw(in: NSRect(origin: .zero, size: workspaceImage.size))
+        NSColor.black.withAlphaComponent(0.32).setFill()
+        NSRect(origin: .zero, size: workspaceImage.size).fill(using: .sourceOver)
+        let sheetRect = NSRect(
+            x: (workspaceImage.size.width - sheetImage.size.width) / 2,
+            y: (workspaceImage.size.height - sheetImage.size.height) / 2,
+            width: sheetImage.size.width,
+            height: sheetImage.size.height
+        )
+        sheetImage.draw(in: sheetRect)
+        canvas.unlockFocus()
+        return png(from: canvas)
+    }
+
+    private static func rasterize(_ window: NSWindow) -> NSImage? {
+        guard let themeFrame = window.contentView?.superview else { return nil }
+        flattenVibrancy(in: themeFrame)
+        let bounds = themeFrame.bounds
+        guard bounds.width > 1, bounds.height > 1,
+              let rep = themeFrame.bitmapImageRepForCachingDisplay(in: bounds)
+        else { return nil }
+        themeFrame.cacheDisplay(in: bounds, to: rep)
+        let image = NSImage(size: bounds.size)
+        image.addRepresentation(rep)
+        return image
+    }
+
+    private static func flattenVibrancy(in view: NSView) {
+        if let effect = view as? NSVisualEffectView {
+            effect.appearance = view.window?.appearance ?? NSApp.appearance
+            effect.blendingMode = .withinWindow
+            effect.state = .inactive
+        }
+        for subview in view.subviews {
+            flattenVibrancy(in: subview)
+        }
+    }
+
+    private static func png(from image: NSImage) -> Data? {
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff)
+        else { return nil }
+        return rep.representation(using: .png, properties: [:])
     }
 
     private static let buckets = [

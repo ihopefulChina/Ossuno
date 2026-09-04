@@ -4,11 +4,12 @@ import SwiftUI
 struct AccountSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State var draft: AccountDraft
     @State private var isTesting = false
     @State private var failure: AccountFormFailure?
-    @State private var showAdvanced = false
+    @State private var showAdvanced: Bool
     @State private var showSecret = false
     @State private var showToken = false
     @State private var pendingACL: ObjectACL?
@@ -28,6 +29,15 @@ struct AccountSheet: View {
         return .from(account, secret: "", token: "")
     }
 
+    init(draft: AccountDraft) {
+        _draft = State(initialValue: draft)
+        #if DEBUG
+        _showAdvanced = State(initialValue: ScreenshotDemo.accountShowsAdvanced)
+        #else
+        _showAdvanced = State(initialValue: false)
+        #endif
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -35,32 +45,24 @@ struct AccountSheet: View {
             Divider()
 
             Form {
-                Section("账号信息") {
+                Section {
                     TextField("显示名称", text: $draft.name, prompt: Text("工作室、主账号…"))
                     TextField("AccessKey ID", text: $draft.accessKeyId)
                         .textContentType(.username)
-                    HStack {
-                        Group {
-                            if showSecret {
-                                TextField("AccessKey Secret", text: $draft.secret)
-                            } else {
-                                SecureField("AccessKey Secret", text: $draft.secret)
-                            }
-                        }
-                        .textContentType(.password)
-                        .privacySensitive()
-                        Button {
-                            showSecret.toggle()
-                        } label: {
-                            Image(systemName: showSecret ? "eye.slash" : "eye")
-                        }
-                        .buttonStyle(.borderless)
-                        .help(showSecret ? "隐藏密钥" : "显示密钥")
-                        .accessibilityLabel(showSecret ? "隐藏 AccessKey Secret" : "显示 AccessKey Secret")
-                    }
+                    secretField(
+                        title: "AccessKey Secret",
+                        text: $draft.secret,
+                        revealed: $showSecret,
+                        showHelp: "显示密钥",
+                        hideHelp: "隐藏密钥",
+                        showAccessibility: "显示 AccessKey Secret",
+                        hideAccessibility: "隐藏 AccessKey Secret"
+                    )
+                } header: {
+                    Text("账号信息")
                 }
 
-                Section("存储空间") {
+                Section {
                     Picker("地域", selection: $draft.regionID) {
                         ForEach(OSSRegion.all) { region in
                             Text(region.name).tag(region.id)
@@ -72,9 +74,6 @@ struct AccountSheet: View {
                             Text(acl.title).tag(acl)
                         }
                     }
-                    Text(draft.defaultACL.detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                     if draft.defaultACL.isPublic {
                         Label("公开权限会允许通过公网链接读取对象，请只用于明确需要公开分发的内容。", systemImage: "exclamationmark.triangle.fill")
                             .font(.callout)
@@ -82,36 +81,39 @@ struct AccountSheet: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .accessibilityLabel("权限警告：对象可通过公网链接读取")
                     }
-                }
-
-                Section("上传") {
-                    TextField("路径模板", text: $draft.prefixTemplate, prompt: Text("assets/{yyyy}/{MM}/{dd}/"))
-                    Text("留空则传到当前文件夹。可用 {yyyy} {MM} {dd} {filename}。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                } header: {
+                    Text("存储空间")
+                } footer: {
+                    Text(draft.defaultACL.detail)
                 }
 
                 Section {
-                    DisclosureGroup("高级", isExpanded: $showAdvanced) {
-                        HStack {
-                            Group {
-                                if showToken {
-                                    TextField("STS Token", text: $draft.token)
-                                } else {
-                                    SecureField("STS Token", text: $draft.token)
-                                }
-                            }
-                            .textContentType(.password)
-                            .privacySensitive()
-                            Button {
-                                showToken.toggle()
-                            } label: {
-                                Image(systemName: showToken ? "eye.slash" : "eye")
-                            }
-                            .buttonStyle(.borderless)
-                            .help(showToken ? "隐藏 STS Token" : "显示 STS Token")
-                            .accessibilityLabel(showToken ? "隐藏 STS Token" : "显示 STS Token")
-                        }
+                    TextField("路径模板", text: $draft.prefixTemplate, prompt: Text("assets/{yyyy}/{MM}/{dd}/"))
+                } header: {
+                    Text("上传")
+                } footer: {
+                    Text("留空则传到当前文件夹。可用 {yyyy} {MM} {dd} {filename}。")
+                }
+
+                Section {
+                    DisclosureGroup(isExpanded: $showAdvanced) {
+                        EmptyView()
+                    } label: {
+                        Text("高级")
+                    }
+                }
+
+                if showAdvanced {
+                    Section {
+                        secretField(
+                            title: "STS Token",
+                            text: $draft.token,
+                            revealed: $showToken,
+                            showHelp: "显示 STS Token",
+                            hideHelp: "隐藏 STS Token",
+                            showAccessibility: "显示 STS Token",
+                            hideAccessibility: "隐藏 STS Token"
+                        )
                         TextField("自定义 Endpoint", text: $draft.endpointOverride, prompt: Text("oss-cn-hangzhou.aliyuncs.com"))
                         TextField("CDN 域名", text: $draft.cdnDomain, prompt: Text("cdn.example.com"))
                         Button("使用公共读写权限…", role: .destructive) {
@@ -120,9 +122,10 @@ struct AccountSheet: View {
                         .disabled(draft.defaultACL == .publicReadWrite)
                     }
                 }
-
             }
             .formStyle(.grouped)
+            .fixedSize(horizontal: false, vertical: true)
+            .animation(reduceMotion ? nil : Motion.chrome, value: showAdvanced)
 
             if let failure {
                 failureFeedback(failure)
@@ -152,14 +155,7 @@ struct AccountSheet: View {
             }
             .padding(16)
         }
-        .frame(
-            minWidth: 540,
-            idealWidth: 560,
-            maxWidth: 620,
-            minHeight: 600,
-            idealHeight: 650,
-            maxHeight: 760
-        )
+        .frame(minWidth: 540, idealWidth: 560, maxWidth: 620)
         .confirmationDialog(
             pendingACL?.title ?? "确认公开权限",
             isPresented: $showACLConfirmation,
@@ -184,6 +180,9 @@ struct AccountSheet: View {
             if let screenshotFailure = ScreenshotDemo.accountFailure {
                 failure = screenshotFailure
                 return
+            }
+            if ScreenshotDemo.accountShowsAdvanced {
+                showAdvanced = true
             }
             #endif
             if let account = model.editingAccount {
@@ -228,6 +227,37 @@ struct AccountSheet: View {
 
     private var canSave: Bool {
         draft.isReadyToSave
+    }
+
+    @ViewBuilder
+    private func secretField(
+        title: String,
+        text: Binding<String>,
+        revealed: Binding<Bool>,
+        showHelp: String,
+        hideHelp: String,
+        showAccessibility: String,
+        hideAccessibility: String
+    ) -> some View {
+        HStack(spacing: 8) {
+            Group {
+                if revealed.wrappedValue {
+                    TextField(title, text: text)
+                } else {
+                    SecureField(title, text: text)
+                }
+            }
+            .textContentType(.password)
+            .privacySensitive()
+            Button {
+                revealed.wrappedValue.toggle()
+            } label: {
+                Image(systemName: revealed.wrappedValue ? "eye.slash" : "eye")
+            }
+            .buttonStyle(.borderless)
+            .help(revealed.wrappedValue ? hideHelp : showHelp)
+            .accessibilityLabel(revealed.wrappedValue ? hideAccessibility : showAccessibility)
+        }
     }
 
     private func failureFeedback(_ failure: AccountFormFailure) -> some View {

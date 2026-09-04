@@ -36,7 +36,7 @@
   </picture>
 </p>
 
-Ossuno 把高频 OSS 操作放进一个符合 macOS 使用习惯的窗口：从账号、Bucket 和收藏位置进入，搜索与预览对象，拖放上传或导出到访达，并在传输中心处理长时间任务。它不是桌面版 OSS 控制台，而是一款边界清晰的日常文件工具。
+Ossuno 把高频 OSS 操作放进一个符合 macOS 使用习惯的窗口：从账号、Bucket 和收藏位置进入，搜索与预览对象，拖放上传或导出到访达，并在内容区底部处理传输进度。它不是桌面版 OSS 控制台，而是一款边界清晰的日常文件工具。
 
 ## 核心能力
 
@@ -58,7 +58,7 @@ Ossuno 把高频 OSS 操作放进一个符合 macOS 使用习惯的窗口：从�
 
 ### 安装
 
-1. 打开[最新 GitHub Release](https://github.com/ihopefulChina/Ossuno/releases/latest)，下载与芯片匹配的安装包：[Apple Silicon（M 系列）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.3-arm64.dmg) · [Intel（x86_64）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.3-x86_64.dmg)。不确定架构时，在苹果菜单的「关于本机」中查看“芯片”或“处理器”。
+1. 打开[最新 GitHub Release](https://github.com/ihopefulChina/Ossuno/releases/latest)，下载与芯片匹配的安装包：[Apple Silicon（M 系列）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.4-arm64.dmg) · [Intel（x86_64）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.4-x86_64.dmg)。不确定架构时，在苹果菜单的「关于本机」中查看“芯片”或“处理器”。
 2. 打开 DMG，将 Ossuno 拖入「应用程序」。
 3. 启动 Ossuno，添加一个权限最小化的 RAM 子账号，选择地域并打开 Bucket。
 

@@ -1,4 +1,5 @@
 #if DEBUG
+import Foundation
 import Testing
 @testable import Ossuno
 
@@ -53,6 +54,31 @@ struct ScreenshotDemoTests {
         #expect(failure?.operation == .savingAccount)
         #expect(failure?.isKeychainFailure == true)
         #expect(failure?.message.contains("错误码 -25308") == true)
+    }
+
+    @Test func accountAdvancedFixtureRequiresAnExplicitDebugArgument() {
+        #expect(!ScreenshotDemo.accountShowsAdvanced(arguments: ["Ossuno", "--ossuno-screenshot-account"]))
+        #expect(
+            ScreenshotDemo.accountShowsAdvanced(
+                arguments: [
+                    "Ossuno",
+                    "--ossuno-screenshot-account",
+                    "--ossuno-screenshot-account-advanced"
+                ]
+            )
+        )
+    }
+
+    @Test func screenshotOutputURLRequiresAnExplicitPath() {
+        #expect(ScreenshotDemo.outputURL(arguments: ["Ossuno", "--ossuno-screenshot-browser"]) == nil)
+        #expect(
+            ScreenshotDemo.outputURL(
+                arguments: [
+                    "Ossuno",
+                    "--ossuno-screenshot-output=/tmp/ossuno-browser.png"
+                ]
+            ) == URL(fileURLWithPath: "/tmp/ossuno-browser.png")
+        )
     }
 }
 #endif

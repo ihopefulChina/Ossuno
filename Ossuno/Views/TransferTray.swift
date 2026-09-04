@@ -9,35 +9,44 @@ struct TransferTray: View {
         HStack(spacing: 8) {
             if model.transfers.activeCount > 0 {
                 ProgressView()
-                    .controlSize(.small)
+                    .controlSize(.mini)
             }
-            Text(title)
-                .foregroundStyle(.secondary)
+            Text(
+                TransferTrayStatus.title(
+                    activeCount: model.transfers.activeCount,
+                    totalCount: model.transfers.jobs.count
+                )
+            )
+            .foregroundStyle(.secondary)
             Spacer(minLength: 8)
             if model.transfers.jobs.contains(where: { $0.status == .running }) {
                 Button("全部暂停") { model.transfers.pauseAll() }
                     .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
             } else if model.transfers.jobs.contains(where: { $0.status == .paused }) {
                 Button("全部继续") { model.transfers.resumeAll() }
                     .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
             }
             Button("打开传输中心") {
                 openWindow(id: "transfers")
             }
             .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
         }
+        .font(.caption)
         .controlSize(.small)
-        .padding(.horizontal, 12)
-        .frame(height: 28)
+        .padding(.horizontal, 10)
+        .frame(height: FinderChrome.barHeight)
         .background(.bar)
         .overlay(alignment: .top) { Divider() }
-    }
-
-    private var title: String {
-        let active = model.transfers.activeCount
-        let total = model.transfers.jobs.count
-        if active > 0 { return "正在传输 \(active) 项" }
-        return total > 0 ? "传输 · \(total) 项" : "传输"
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(
+            TransferTrayStatus.title(
+                activeCount: model.transfers.activeCount,
+                totalCount: model.transfers.jobs.count
+            )
+        )
     }
 }
 

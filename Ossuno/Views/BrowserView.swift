@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 struct BrowserView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var showFileImporter: Bool
     @State private var photos: [PhotosPickerItem] = []
 
@@ -26,16 +27,21 @@ struct BrowserView: View {
                     // Keep the final list row clear of the overlaid Finder-style
                     // path bar. Using an overlay also avoids the macOS 15 issue
                     // where a trailing flexible VStack sibling can disappear.
-                    .padding(.bottom, modelRef.selectedBucket == nil ? 0 : 24)
+                    .padding(.bottom, modelRef.selectedBucket == nil ? 0 : FinderChrome.barHeight)
                 if modelRef.selectedBucket != nil {
                     PathBar(showFileImporter: $showFileImporter)
                 }
             }
         }
-        // NavigationSplitView does not consistently propagate its bottom
-        // safe-area inset into the detail column on macOS 15. Reserve the
-        // transfer tray's height here as well so it cannot cover the path.
-        .padding(.bottom, modelRef.transfers.hasJobs ? 28 : 0)
+        // Keep the transfer status bar in the detail column only, like Finder's
+        // path/status bars, so the sidebar material runs to the window bottom.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if modelRef.transfers.hasJobs {
+                TransferTray()
+                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(reduceMotion ? nil : Motion.chrome, value: modelRef.transfers.hasJobs)
         .background(BrowserShortcutScopeProbe())
         .navigationTitle(title)
         .navigationSubtitle(subtitle)
@@ -440,6 +446,8 @@ struct BrowserView: View {
                     }
             }
         }
+        .tableStyle(.inset)
+        .alternatingRowBackgrounds(.enabled)
         .overlay { backgroundMenuOverlay(modelRef).allowsHitTesting(false) }
     }
 
@@ -690,9 +698,9 @@ private struct PathBar: View {
                     .monospacedDigit()
             }
         }
-        .font(.callout)
-        .padding(.horizontal, 8)
-        .frame(height: 24)
+        .font(.caption)
+        .padding(.horizontal, 10)
+        .frame(height: FinderChrome.barHeight)
         .background(.bar)
         .overlay(alignment: .top) {
             Divider()
