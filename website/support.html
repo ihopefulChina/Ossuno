@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#101013" media="(prefers-color-scheme: dark)">
   <link rel="canonical" href="https://ihopefulchina.github.io/Ossuno/support.html">
-  <link rel="icon" type="image/png" href="assets/ossuno-favicon.png">
+  <link rel="icon" type="image/png" href="assets/ossuno-favicon-v7.png">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body class="document-page">
@@ -16,7 +16,7 @@
   <header class="site-header">
     <div class="header-inner">
       <a class="brand" href="index.html" aria-label="返回 Ossuno 首页">
-        <img src="assets/ossuno-favicon.png" width="64" height="64" alt="">
+        <img src="assets/ossuno-favicon-v7.png" width="64" height="64" alt="">
         <span>Ossuno</span>
       </a>
       <nav class="main-nav" aria-label="主导航">
@@ -51,7 +51,7 @@
           <a class="topic-tile" href="#connect"><strong>无法连接账号<span class="topic-arrow" aria-hidden="true">→</span></strong><small>AccessKey、权限与 Endpoint 排查</small></a>
           <a class="topic-tile" href="#transfer"><strong>上传或下载失败<span class="topic-arrow" aria-hidden="true">→</span></strong><small>断点续传与自动重试</small></a>
           <a class="topic-tile" href="#recover"><strong>恢复删除的对象<span class="topic-arrow" aria-hidden="true">→</span></strong><small>版本控制与撤销</small></a>
-          <a class="topic-tile" href="#update"><strong>更新没有出现<span class="topic-arrow" aria-hidden="true">→</span></strong><small>手动检查与代理网络</small></a>
+          <a class="topic-tile" href="#update"><strong>更新或迁移<span class="topic-arrow" aria-hidden="true">→</span></strong><small>1.0.5 需手动安装</small></a>
           <a class="topic-tile" href="#mcp"><strong>让 AI 操作 OSS<span class="topic-arrow" aria-hidden="true">→</span></strong><small>ossuno-mcp 一键注册</small></a>
           <a class="topic-tile" href="#issue"><strong>提交反馈<span class="topic-arrow" aria-hidden="true">→</span></strong><small>诊断信息与安全报告</small></a>
         </div>
@@ -59,7 +59,7 @@
 
       <section id="first-open" data-reveal>
         <h2>首次打开被 macOS 拦截</h2>
-        <p>Ossuno 1.0.4 的 Apple Silicon 与 Intel 两个 DMG 均采用 ad-hoc 代码签名（没有开发者身份），不是 Developer ID 签名，且未经 Apple 公证。因此 macOS 无法验证开发者或确认安装包已经过 Apple 恶意软件检查，首次打开通常会触发 Gatekeeper。</p>
+        <p>Ossuno 1.0.5 的 Apple Silicon 与 Intel 两个 DMG 均采用 ad-hoc 代码签名（没有开发者身份），不是 Developer ID 签名，且未经 Apple 公证。因此 macOS 无法验证开发者或确认安装包已经过 Apple 恶意软件检查，首次打开通常会触发 Gatekeeper。</p>
         <ol>
           <li>打开 DMG，把 Ossuno 拖进「应用程序」，然后双击 Ossuno 尝试打开一次。</li>
           <li>若 macOS 阻止运行，打开「系统设置 → 隐私与安全」，滚动到“安全性”，点击「仍要打开」。</li>
@@ -100,8 +100,14 @@
       </section>
 
       <section id="update" data-reveal>
-        <h2>更新没有出现</h2>
-        <p>在菜单栏选择“Ossuno → 检查更新…”。自动检查可在“设置 → 通用”中开启。网络代理或无法访问 GitHub Releases 时，更新检查会失败，可回到<a href="index.html#download">下载区</a>手动选择 Apple Silicon 或 Intel 安装包，也可从<a href="https://github.com/ihopefulChina/Ossuno/releases" rel="noopener">发布页</a>下载最新版本。</p>
+        <h2>更新或 1.0.5 迁移</h2>
+        <p><strong>从 1.0.4 或更早版本升级到 1.0.5 必须手动安装。</strong>1.0.5 将 Bundle ID 从 <code>studio.ossuno.oss</code> 更正为 <code>app.ihopeful.Ossuno</code>，Sparkle 无法以新身份直接替换旧应用；旧版“检查更新”只会显示迁移说明并引导下载。</p>
+        <ol>
+          <li>退出正在运行的旧版 Ossuno。</li>
+          <li>从<a href="index.html#download">下载区</a>或<a href="https://github.com/ihopefulChina/Ossuno/releases" rel="noopener">发布页</a>下载与 Mac 芯片匹配的 1.0.5 DMG，将 Ossuno 拖入「应用程序」并确认替换。</li>
+          <li>首次启动 1.0.5 后，旧偏好与账号显示配置会迁移，并继续查找原服务名下的钥匙串凭证。由于应用身份已变更，macOS 可能要求你允许访问；允许后无需重新输入。系统也可能再次请求通知权限。</li>
+        </ol>
+        <p>完成迁移后，后续同一 Bundle ID 的版本可继续在“Ossuno → 检查更新…”中安装。自动检查可在“设置 → 通用”中开启；网络代理或无法访问 GitHub Releases 时，请手动下载。</p>
       </section>
 
       <section id="mcp" data-reveal>
@@ -119,7 +125,7 @@
 
   <footer class="site-footer">
     <div class="footer-inner">
-      <div class="footer-brand"><img src="assets/ossuno-favicon.png" width="64" height="64" alt=""><span>Ossuno</span></div>
+      <div class="footer-brand"><img src="assets/ossuno-favicon-v7.png" width="64" height="64" alt=""><span>Ossuno</span></div>
       <p>原生 Mac 版 阿里云OSS 客户端与 ossuno-mcp</p>
       <nav aria-label="页脚导航">
         <a href="index.html">首页</a>

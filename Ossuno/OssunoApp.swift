@@ -5,6 +5,10 @@ import SwiftUI
 struct OssunoApp: App {
     @NSApplicationDelegateAdaptor(OssunoAppDelegate.self) private var appDelegate
 
+    init() {
+        AppIdentity.prepareForLaunch()
+    }
+
     var body: some Scene {
         WindowGroup("Ossuno", id: "main") {
             WorkspaceRoot()

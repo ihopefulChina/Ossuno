@@ -8,7 +8,7 @@
   "theme_color": "#f4f6f9",
   "icons": [
     {
-      "src": "assets/ossuno-icon.png",
+      "src": "assets/ossuno-icon-v7.png",
       "sizes": "512x512",
       "type": "image/png"
     }

@@ -11,8 +11,18 @@ support="$site_root/support.html"
 mcp="$site_root/mcp.html"
 version_info="$("$repo_root/scripts/project-version.sh")"
 version="${version_info%% *}"
-arm64_download_url="https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-$version-arm64.dmg"
-x86_64_download_url="https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-$version-x86_64.dmg"
+arm64_build_number="${version_info##* }"
+x86_64_build_number="$((arm64_build_number - 1))"
+arm64_download_url="https://github.com/ihopefulChina/Ossuno/releases/download/v$version/Ossuno-$version-arm64.dmg"
+x86_64_download_url="https://github.com/ihopefulChina/Ossuno/releases/download/v$version/Ossuno-$version-x86_64.dmg"
+app_icon="Ossuno/Assets.xcassets/AppIcon.appiconset/Icon-v7-256.png"
+website_icon="assets/ossuno-icon-v7.png"
+website_favicon="assets/ossuno-favicon-v7.png"
+public_visual_version="1.0.5"
+browser_screenshot="assets/browser-$public_visual_version.png"
+browser_dark_screenshot="assets/browser-dark-$public_visual_version.png"
+account_screenshot="assets/account-$public_visual_version.png"
+account_dark_screenshot="assets/account-dark-$public_visual_version.png"
 
 required_files=(
   "$index"
@@ -26,13 +36,16 @@ required_files=(
   "$site_root/robots.txt"
   "$site_root/.nojekyll"
   "$site_root/appcast.xml"
-  "$site_root/assets/ossuno-icon.png"
-  "$site_root/assets/ossuno-favicon.png"
-  "$site_root/assets/browser.png"
-  "$site_root/assets/browser-dark.png"
-  "$site_root/assets/account.png"
-  "$site_root/assets/account-dark.png"
+  "$site_root/$website_icon"
+  "$site_root/$website_favicon"
+  "$site_root/$browser_screenshot"
+  "$site_root/$browser_dark_screenshot"
+  "$site_root/$account_screenshot"
+  "$site_root/$account_dark_screenshot"
   "$site_root/assets/author-blog.png"
+  "$repo_root/$app_icon"
+  "$repo_root/docs/browser-$public_visual_version.png"
+  "$repo_root/docs/account-$public_visual_version.png"
 )
 
 for file in "${required_files[@]}"; do
@@ -61,6 +74,26 @@ if ! cmp -s "$repo_root/appcast.xml" "$site_root/appcast.xml"; then
   exit 1
 fi
 
+for build_and_url in \
+  "$x86_64_build_number|$x86_64_download_url" \
+  "$arm64_build_number|$arm64_download_url"; do
+  build_number="${build_and_url%%|*}"
+  expected_url="${build_and_url#*|}"
+  item_xpath="//*[local-name()='item' and *[local-name()='version' and text()='$build_number']]"
+  item_count="$(xmllint --xpath "count($item_xpath)" "$repo_root/appcast.xml")"
+  short_version="$(xmllint --xpath "string($item_xpath/*[local-name()='shortVersionString'])" "$repo_root/appcast.xml")"
+  download_url="$(xmllint --xpath "string($item_xpath/*[local-name()='enclosure']/@url)" "$repo_root/appcast.xml")"
+  informational_count="$(xmllint --xpath "count($item_xpath/*[local-name()='informationalUpdate']/*[local-name()='belowVersion' and text()='12'])" "$repo_root/appcast.xml")"
+  if [[ "$item_count" != "1" || "$short_version" != "$version" || "$download_url" != "$expected_url" ]]; then
+    echo "Appcast is missing the current $version build $build_number item or its download URL." >&2
+    exit 1
+  fi
+  if [[ "$informational_count" != "1" ]]; then
+    echo "Appcast build $build_number must be informational for legacy hosts below build 12." >&2
+    exit 1
+  fi
+done
+
 required_html=(
   'lang="zh-CN"'
   '<meta name="description"'
@@ -76,8 +109,14 @@ required_html=(
   'id="start"'
   'id="faq"'
   '<details>'
-  'alt="在 Ossuno 中浏览阿里云 OSS"'
-  'alt="在 Ossuno 中添加阿里云 OSS 账号"'
+  'alt="在 Ossuno 中浏览虚拟测试 Bucket 的对象"'
+  'alt="在 Ossuno 中添加虚拟测试账号"'
+  "href=\"$website_favicon\""
+  "href=\"$website_icon\""
+  "src=\"$browser_screenshot\""
+  "srcset=\"$browser_dark_screenshot\""
+  "src=\"$account_screenshot\""
+  "srcset=\"$account_dark_screenshot\""
   "$arm64_download_url"
   "$x86_64_download_url"
   'src="download.js" defer'
@@ -111,6 +150,7 @@ for page_and_canonical in \
     "<link rel=\"canonical\" href=\"$canonical\"" \
     '<a class="skip-link" href="#main">' \
     '<main id="main"' \
+    "href=\"$website_favicon\"" \
     'href="index.html"' \
     'href="mcp.html"' \
     'href="privacy.html"' \
@@ -121,6 +161,29 @@ for page_and_canonical in \
     fi
   done
 done
+
+for marker in \
+  "src=\"$app_icon\"" \
+  "src=\"docs/browser-$public_visual_version.png\"" \
+  "srcset=\"website/$browser_dark_screenshot\"" \
+  "src=\"docs/account-$public_visual_version.png\"" \
+  "srcset=\"website/$account_dark_screenshot\""; do
+  if ! grep -Fq -- "$marker" "$readme"; then
+    echo "README is missing current public visual: $marker" >&2
+    exit 1
+  fi
+done
+
+if ! grep -Fq -- "\"src\": \"$website_icon\"" "$site_root/site.webmanifest"; then
+  echo "Web App Manifest is missing the current icon: $website_icon" >&2
+  exit 1
+fi
+
+if grep -REn --include='*.html' --include='site.webmanifest' \
+  'assets/(ossuno-(icon|favicon)|browser(-dark)?|account(-dark)?)\.png' "$site_root"; then
+  echo "Website still references an unversioned public icon or screenshot." >&2
+  exit 1
+fi
 
 if grep -Eini -- \
   'npm.{0,24}(尚未发布|未发布)|发布后.{0,24}(可用|可运行)|计划.{0,24}发布到 npm|正式发布前|not yet published|coming soon' \
@@ -149,14 +212,14 @@ for download_url in "$arm64_download_url" "$x86_64_download_url"; do
   fi
 done
 
-unexpected_downloads="$(grep -RhoE --include='*.html' 'https://github\.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-[0-9.]+-(arm64|x86_64)\.dmg' "$site_root" | grep -Fvx -- "$arm64_download_url" | grep -Fvx -- "$x86_64_download_url" || true)"
+unexpected_downloads="$(grep -RhoE --include='*.html' 'https://github\.com/ihopefulChina/Ossuno/releases/(latest/download|download/v[0-9.]+)/Ossuno-[0-9.]+-(arm64|x86_64)\.dmg' "$site_root" | grep -Fvx -- "$arm64_download_url" | grep -Fvx -- "$x86_64_download_url" || true)"
 if [[ -n "$unexpected_downloads" ]]; then
   echo "Website contains mismatched download URLs:" >&2
   echo "$unexpected_downloads" >&2
   exit 1
 fi
 
-if grep -RhoE --include='*.html' 'https://github\.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-[0-9.]+\.dmg' "$site_root" | grep -q .; then
+if grep -RhoE --include='*.html' 'https://github\.com/ihopefulChina/Ossuno/releases/(latest/download|download/v[0-9.]+)/Ossuno-[0-9.]+\.dmg' "$site_root" | grep -q .; then
   echo "Website still contains a legacy architecture-neutral DMG URL." >&2
   exit 1
 fi
@@ -165,6 +228,17 @@ release_notes="$repo_root/docs/releases/$version.md"
 if [[ ! -f "$release_notes" ]]; then
   echo "Missing release notes for version $version: ${release_notes#"$repo_root/"}" >&2
   exit 1
+fi
+
+if [[ "$version" == "1.0.5" ]]; then
+  for migration_file in "$readme" "$release_notes" "$index" "$support"; do
+    for migration_marker in 'studio.ossuno.oss' 'app.ihopeful.Ossuno' '1.0.4' '1.0.5' '手动'; do
+      if ! grep -Fq -- "$migration_marker" "$migration_file"; then
+        echo "Missing Bundle ID migration guidance in ${migration_file#"$repo_root/"}: $migration_marker" >&2
+        exit 1
+      fi
+    done
+  done
 fi
 
 for distribution_file in "$readme" "$release_notes" "$index" "$support"; do

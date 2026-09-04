@@ -95,6 +95,7 @@ jobs:
             test "$(lipo -archs "$app_executable")" = "arm64 x86_64"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_info")" = "$expected_version"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app_info")" = "$expected_build"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_info")" = "app.ihopeful.Ossuno"
 
       - name: Analyze
         run: |

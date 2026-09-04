@@ -8,7 +8,11 @@ architecture_selection="${2:-all}"
 version_info="$("$repo_dir/scripts/project-version.sh")"
 version="${version_info%% *}"
 base_build_number="${version_info##* }"
+expected_bundle_identifier="app.ihopeful.Ossuno"
 sparkle_account="studio.ossuno.oss"
+# This is the Keychain account for the existing Sparkle signing key, not the
+# application Bundle ID. Keep it stable across the 1.0.5 identity migration.
+informational_update_below_version="12"
 version_slug="${version//./}"
 dist_dir="$repo_dir/dist"
 tracked_appcast_path="$repo_dir/appcast.xml"
@@ -145,7 +149,7 @@ trap cleanup EXIT
 build_architecture() {
     local architecture="$1"
     local build_number artifact_name derived_dir built_app_path packaged_app_path
-    local temp_dmg volume_dir actual_version actual_build signature_details
+    local temp_dmg volume_dir actual_version actual_build actual_bundle_identifier signature_details
 
     build_number="$(build_number_for_architecture "$architecture")"
     artifact_name="$(artifact_name_for_architecture "$architecture")"
@@ -192,8 +196,11 @@ build_architecture() {
     [[ -d "$built_app_path" ]] || fail "built app is missing for $architecture"
     actual_version="$(plutil -extract CFBundleShortVersionString raw "$built_app_path/Contents/Info.plist")"
     actual_build="$(plutil -extract CFBundleVersion raw "$built_app_path/Contents/Info.plist")"
+    actual_bundle_identifier="$(plutil -extract CFBundleIdentifier raw "$built_app_path/Contents/Info.plist")"
     [[ "$actual_version" == "$version" ]] || fail "$architecture app version is $actual_version"
     [[ "$actual_build" == "$build_number" ]] || fail "$architecture app build is $actual_build"
+    [[ "$actual_bundle_identifier" == "$expected_bundle_identifier" ]] \
+        || fail "$architecture app bundle identifier is $actual_bundle_identifier, expected $expected_bundle_identifier"
 
     # Sparkle is delivered as a universal binary artifact. ditto --arch keeps
     # the requested CodeDirectory slice while removing every other slice from
@@ -300,9 +307,16 @@ fi
     --download-url-prefix "https://github.com/ihopefulChina/Ossuno/releases/download/v$version/" \
     --link "https://github.com/ihopefulChina/Ossuno/releases/tag/v$version" \
     --versions "$x86_64_build_number,$arm64_build_number" \
+    --informational-update-versions "<$informational_update_below_version" \
     --embed-release-notes \
     --maximum-deltas 0 \
     "$appcast_dir"
+
+for build_number in "$x86_64_build_number" "$arm64_build_number"; do
+    informational_update_count="$(xmllint --xpath "count(//*[local-name()='item' and *[local-name()='version' and text()='$build_number'] and *[local-name()='informationalUpdate']/*[local-name()='belowVersion' and text()='$informational_update_below_version']])" "$appcast_dir/appcast.xml")"
+    [[ "$informational_update_count" == "1" ]] \
+        || fail "build $build_number must be informational for hosts below build $informational_update_below_version"
+done
 
 if [[ "$mode" == "adhoc-release" ]]; then
     all_item_count="$(xmllint --xpath "count(//*[local-name()='item'])" "$appcast_dir/appcast.xml")"

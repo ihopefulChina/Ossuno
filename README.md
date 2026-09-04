@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Ossuno/Assets.xcassets/AppIcon.appiconset/Icon-v6-256.png" width="112" height="112" alt="Ossuno 图标">
+  <img src="Ossuno/Assets.xcassets/AppIcon.appiconset/Icon-v7-256.png" width="112" height="112" alt="Ossuno 图标">
 </p>
 
 <h1 align="center">Ossuno</h1>
@@ -31,8 +31,8 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="website/assets/browser-dark.png">
-    <img src="docs/browser.png" width="920" alt="在 Ossuno 中以列表视图浏览阿里云 OSS 对象">
+    <source media="(prefers-color-scheme: dark)" srcset="website/assets/browser-dark-1.0.5.png">
+    <img src="docs/browser-1.0.5.png" width="920" alt="在 Ossuno 中以列表视图浏览虚拟测试 Bucket 的对象">
   </picture>
 </p>
 
@@ -58,11 +58,14 @@ Ossuno 把高频 OSS 操作放进一个符合 macOS 使用习惯的窗口：从�
 
 ### 安装
 
-1. 打开[最新 GitHub Release](https://github.com/ihopefulChina/Ossuno/releases/latest)，下载与芯片匹配的安装包：[Apple Silicon（M 系列）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.4-arm64.dmg) · [Intel（x86_64）](https://github.com/ihopefulChina/Ossuno/releases/latest/download/Ossuno-1.0.4-x86_64.dmg)。不确定架构时，在苹果菜单的「关于本机」中查看“芯片”或“处理器”。
+1. 打开 [Ossuno 1.0.5 Release](https://github.com/ihopefulChina/Ossuno/releases/tag/v1.0.5)，下载与芯片匹配的安装包：[Apple Silicon（M 系列）](https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.5/Ossuno-1.0.5-arm64.dmg) · [Intel（x86_64）](https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.5/Ossuno-1.0.5-x86_64.dmg)。不确定架构时，在苹果菜单的「关于本机」中查看“芯片”或“处理器”。
 2. 打开 DMG，将 Ossuno 拖入「应用程序」。
 3. 启动 Ossuno，添加一个权限最小化的 RAM 子账号，选择地域并打开 Bucket。
 
 > [!IMPORTANT]
+> **从 1.0.4 或更早版本升级到 1.0.5 必须手动下载。** 1.0.5 将 Bundle ID 从 `studio.ossuno.oss` 更正为 `app.ihopeful.Ossuno`，Sparkle 只会为旧身份显示升级说明，不会直接替换应用。退出旧版后，下载对应芯片的 1.0.5 DMG 并将 Ossuno 拖入「应用程序」。1.0.5 会迁移旧偏好与账号显示配置，并继续查找原钥匙串凭证；macOS 可能会要求你允许新应用身份访问钥匙串，也可能再次请求通知权限。
+
+> [!WARNING]
 > 当前两个 DMG 均采用 **ad-hoc** 代码签名，不是 Developer ID 签名，且未经 Apple 公证。首次启动通常会被 Gatekeeper 拦截。请先确认安装包来自本仓库的 GitHub Releases，再前往「系统设置 → 隐私与安全」，在“安全性”区域选择「仍要打开」。详情见 [Apple 的安全打开说明](https://support.apple.com/zh-cn/102445)。
 
 ### 首次连接
@@ -71,8 +74,8 @@ Ossuno 把高频 OSS 操作放进一个符合 macOS 使用习惯的窗口：从�
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="website/assets/account-dark.png">
-    <img src="docs/account.png" width="820" alt="在 Ossuno 中添加阿里云 OSS 账号">
+    <source media="(prefers-color-scheme: dark)" srcset="website/assets/account-dark-1.0.5.png">
+    <img src="docs/account-1.0.5.png" width="820" alt="在 Ossuno 中添加虚拟测试账号">
   </picture>
 </p>
 

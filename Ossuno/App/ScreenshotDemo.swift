@@ -229,8 +229,13 @@ enum ScreenshotDemo {
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
             let bundleID = Bundle.main.bundleIdentifier
+            let processID = ProcessInfo.processInfo.processIdentifier
             let window = content.windows
-                .filter { $0.owningApplication?.bundleIdentifier == bundleID }
+                .filter { window in
+                    guard let application = window.owningApplication else { return false }
+                    return application.bundleIdentifier == bundleID
+                        && isCurrentProcess(candidatePID: application.processID, currentPID: processID)
+                }
                 .max { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
             guard let window else {
                 fputs("screenshot: ScreenCaptureKit found no window\n", stderr)
@@ -250,6 +255,10 @@ enum ScreenshotDemo {
             fputs("screenshot: ScreenCaptureKit \(error.localizedDescription)\n", stderr)
             return nil
         }
+    }
+
+    static func isCurrentProcess(candidatePID: Int32?, currentPID: Int32) -> Bool {
+        candidatePID == currentPID
     }
 
     static func capturePNG() -> Data? {

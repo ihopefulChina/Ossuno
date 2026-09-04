@@ -48,3 +48,6 @@ plutil -lint Info.plist Ossuno/PrivacyInfo.xcprivacy
 ## Releases
 
 版本号、构建号、发布说明、README、网站、DMG 与 appcast 必须保持一致。发布产物只由维护者通过仓库脚本生成；Pull Request 不应提交私钥、凭证或临时构建产物。
+
+- 公开图标和截图更新时使用新的缓存友好文件名，同步 README、所有网站页面、favicon 和 Web App Manifest；截图只能使用虚拟测试账号与脱敏数据。
+- Bundle ID 迁移必须附带偏好与钥匙串兼容验证、手动升级说明和 Sparkle 信息更新标记。Sparkle 签名密钥的 `sparkle_account` 不是 Bundle ID，身份迁移时不应随之更改。

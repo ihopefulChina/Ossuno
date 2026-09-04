@@ -80,5 +80,11 @@ struct ScreenshotDemoTests {
             ) == URL(fileURLWithPath: "/tmp/ossuno-browser.png")
         )
     }
+
+    @Test func screenshotWindowSelectionRequiresTheCurrentProcess() {
+        #expect(ScreenshotDemo.isCurrentProcess(candidatePID: 42, currentPID: 42))
+        #expect(!ScreenshotDemo.isCurrentProcess(candidatePID: 43, currentPID: 42))
+        #expect(!ScreenshotDemo.isCurrentProcess(candidatePID: nil, currentPID: 42))
+    }
 }
 #endif
