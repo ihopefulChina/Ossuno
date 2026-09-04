@@ -74,25 +74,46 @@ if ! cmp -s "$repo_root/appcast.xml" "$site_root/appcast.xml"; then
   exit 1
 fi
 
-for build_and_url in \
-  "$x86_64_build_number|$x86_64_download_url" \
-  "$arm64_build_number|$arm64_download_url"; do
-  build_number="${build_and_url%%|*}"
-  expected_url="${build_and_url#*|}"
-  item_xpath="//*[local-name()='item' and *[local-name()='version' and text()='$build_number']]"
-  item_count="$(xmllint --xpath "count($item_xpath)" "$repo_root/appcast.xml")"
-  short_version="$(xmllint --xpath "string($item_xpath/*[local-name()='shortVersionString'])" "$repo_root/appcast.xml")"
-  download_url="$(xmllint --xpath "string($item_xpath/*[local-name()='enclosure']/@url)" "$repo_root/appcast.xml")"
-  informational_count="$(xmllint --xpath "count($item_xpath/*[local-name()='informationalUpdate']/*[local-name()='belowVersion' and text()='12'])" "$repo_root/appcast.xml")"
-  if [[ "$item_count" != "1" || "$short_version" != "$version" || "$download_url" != "$expected_url" ]]; then
-    echo "Appcast is missing the current $version build $build_number item or its download URL." >&2
-    exit 1
-  fi
-  if [[ "$informational_count" != "1" ]]; then
-    echo "Appcast build $build_number must be informational for legacy hosts below build 12." >&2
-    exit 1
-  fi
-done
+python3 - \
+  "$repo_root/appcast.xml" \
+  "$version" \
+  "$x86_64_build_number" "$x86_64_download_url" \
+  "$arm64_build_number" "$arm64_download_url" <<'PY'
+from pathlib import Path
+from xml.etree import ElementTree
+import sys
+
+
+appcast_path = Path(sys.argv[1])
+version = sys.argv[2]
+expected_items = zip(sys.argv[3::2], sys.argv[4::2])
+sparkle = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
+items = ElementTree.parse(appcast_path).getroot().findall("./channel/item")
+
+for build_number, expected_url in expected_items:
+    matches = [
+        item for item in items
+        if item.findtext(f"{sparkle}version") == build_number
+    ]
+    if len(matches) != 1:
+        raise SystemExit(
+            f"Appcast is missing the current {version} build {build_number} item or its download URL."
+        )
+    item = matches[0]
+    enclosure = item.find("enclosure")
+    download_url = enclosure.get("url") if enclosure is not None else None
+    if item.findtext(f"{sparkle}shortVersionString") != version or download_url != expected_url:
+        raise SystemExit(
+            f"Appcast is missing the current {version} build {build_number} item or its download URL."
+        )
+    below_version = item.findtext(
+        f"{sparkle}informationalUpdate/{sparkle}belowVersion"
+    )
+    if below_version != "12":
+        raise SystemExit(
+            f"Appcast build {build_number} must be informational for legacy hosts below build 12."
+        )
+PY
 
 required_html=(
   'lang="zh-CN"'
