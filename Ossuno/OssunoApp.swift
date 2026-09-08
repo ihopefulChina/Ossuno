@@ -128,7 +128,8 @@ final class OssunoAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
-            NSApp.windows.first?.makeKeyAndOrderFront(nil)
+            let workspace = NSApp.windows.first { $0.identifier == WindowActions.workspaceID }
+            (workspace ?? NSApp.windows.first)?.makeKeyAndOrderFront(nil)
         }
         return true
     }
@@ -204,10 +205,16 @@ struct OssunoCommands: Commands {
             .disabled(actions?.canUndo != true)
         }
         CommandGroup(replacing: .newItem) {
+            Button("新建窗口") {
+                openWindow(id: "main")
+            }
+            .keyboardShortcut("n", modifiers: [.command])
             Button("上传") { actions?.upload() }
                 .keyboardShortcut("o", modifiers: [.command])
             Button("从剪贴板上传") { actions?.pasteLocalFiles() }
+                .keyboardShortcut("v", modifiers: [.command, .shift])
             Button("添加账号…") { actions?.addAccount() }
+                .keyboardShortcut("a", modifiers: [.command, .shift])
             Divider()
             Button("新建文件夹") { actions?.newFolder() }
                 .keyboardShortcut("n", modifiers: [.command, .shift])

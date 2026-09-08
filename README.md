@@ -46,7 +46,7 @@ Ossuno 把高频 OSS 操作放进一个符合 macOS 使用习惯的窗口：从�
 | Mac 原生交互 | 拖放、Command / Shift 多选、Return 原地重命名、Space 快速查看、`⌘I` 对象信息、链接分享与完成通知 |
 | 云端整理 | 新建文件夹、剪切 / 复制 / 粘贴、重命名、删除、跨 Bucket 复制或移动、冲突时跳过或保留两者 |
 | 可靠传输 | multipart 上传、分段下载、持久化检查点、暂停 / 继续、失败重试、并发与方向限速、CRC64 校验 |
-| 对象配置 | Content-Type、Cache-Control、Content-Disposition、用户元数据、OSS 标签、ACL 与临时签名链接 |
+| 对象配置 | Content-Type、Cache-Control、Content-Disposition、用户元数据、OSS 标签、ACL |
 | AI 自动化 | 独立的 `ossuno-mcp` 服务器，提供 Bucket 浏览、上传、下载和临时链接工具 |
 
 ## 快速开始
@@ -58,12 +58,12 @@ Ossuno 把高频 OSS 操作放进一个符合 macOS 使用习惯的窗口：从�
 
 ### 安装
 
-1. 打开 [Ossuno 1.0.5 Release](https://github.com/ihopefulChina/Ossuno/releases/tag/v1.0.5)，下载与芯片匹配的安装包：[Apple Silicon（M 系列）](https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.5/Ossuno-1.0.5-arm64.dmg) · [Intel（x86_64）](https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.5/Ossuno-1.0.5-x86_64.dmg)。不确定架构时，在苹果菜单的「关于本机」中查看“芯片”或“处理器”。
+1. 打开 [Ossuno 1.0.6 Release](https://github.com/ihopefulChina/Ossuno/releases/tag/v1.0.6)，下载与芯片匹配的安装包：[Apple Silicon（M 系列）](https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.6/Ossuno-1.0.6-arm64.dmg) · [Intel（x86_64）](https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.6/Ossuno-1.0.6-x86_64.dmg)。不确定架构时，在苹果菜单的「关于本机」中查看“芯片”或“处理器”。
 2. 打开 DMG，将 Ossuno 拖入「应用程序」。
 3. 启动 Ossuno，添加一个权限最小化的 RAM 子账号，选择地域并打开 Bucket。
 
 > [!IMPORTANT]
-> **从 1.0.4 或更早版本升级到 1.0.5 必须手动下载。** 1.0.5 将 Bundle ID 从 `studio.ossuno.oss` 更正为 `app.ihopeful.Ossuno`，Sparkle 只会为旧身份显示升级说明，不会直接替换应用。退出旧版后，下载对应芯片的 1.0.5 DMG 并将 Ossuno 拖入「应用程序」。1.0.5 会迁移旧偏好与账号显示配置，并继续查找原钥匙串凭证；macOS 可能会要求你允许新应用身份访问钥匙串，也可能再次请求通知权限。
+> **从 1.0.4 或更早版本升级到 1.0.5 或更高版本必须手动下载。** 1.0.5 将 Bundle ID 从 `studio.ossuno.oss` 更正为 `app.ihopeful.Ossuno`，Sparkle 只会为旧身份显示升级说明，不会直接替换应用。退出旧版后，下载对应芯片的 1.0.6 DMG 并将 Ossuno 拖入「应用程序」。1.0.5 起会迁移旧偏好与账号显示配置，并继续查找原钥匙串凭证；macOS 可能会要求你允许新应用身份访问钥匙串，也可能再次请求通知权限。已安装 1.0.5 的用户可通过应用内更新升级到 1.0.6。
 
 > [!WARNING]
 > 当前两个 DMG 均采用 **ad-hoc** 代码签名，不是 Developer ID 签名，且未经 Apple 公证。首次启动通常会被 Gatekeeper 拦截。请先确认安装包来自本仓库的 GitHub Releases，再前往「系统设置 → 隐私与安全」，在“安全性”区域选择「仍要打开」。详情见 [Apple 的安全打开说明](https://support.apple.com/zh-cn/102445)。
@@ -87,7 +87,7 @@ Ossuno 把高频 OSS 操作放进一个符合 macOS 使用习惯的窗口：从�
 
 - 默认搜索当前文件夹；切换到「当前 Bucket」后会分页扫描并显示进度。
 - 空格打开快速查看，`⌘I` 查看对象属性；常用前缀可收藏到侧边栏。
-- 可复制直链、Markdown 或 HTML，也可为私有对象生成有时效的签名链接。
+- 可复制对象原地址的直链、Markdown 或 HTML；私有对象打开该地址会被拒绝访问。
 - 单次聚合最多读取 30 页，通常约 3 万个对象；达到边界后会标记结果不完整，并阻止可能遗漏对象的文件夹级危险操作。
 
 ### 整理与跨 Bucket 传输

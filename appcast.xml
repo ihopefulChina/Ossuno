@@ -3,46 +3,51 @@
     <channel>
         <title>Ossuno</title>
         <item>
-            <title>1.0.5</title>
-            <pubDate>Fri, 04 Sep 2026 17:26:07 +0800</pubDate>
-            <link>https://github.com/ihopefulChina/Ossuno/releases/tag/v1.0.5</link>
+            <title>1.0.6</title>
+            <pubDate>Tue, 08 Sep 2026 14:07:36 +0800</pubDate>
+            <link>https://github.com/ihopefulChina/Ossuno/releases/tag/v1.0.6</link>
             <sparkle:informationalUpdate>
                 <sparkle:belowVersion>12</sparkle:belowVersion>
             </sparkle:informationalUpdate>
-            <sparkle:version>13</sparkle:version>
-            <sparkle:shortVersionString>1.0.5</sparkle:shortVersionString>
+            <sparkle:version>15</sparkle:version>
+            <sparkle:shortVersionString>1.0.6</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# Ossuno 1.0.5
+            <description sparkle:format="markdown"><![CDATA[# Ossuno 1.0.6
 
-1.0.5 统一了应用身份与品牌资产：更正 Bundle ID，替换全套应用与网站图标，并用仅包含虚拟测试数据的最新界面截图更新 README 和官网。
+1.0.6 是一次稳定性与日常体验更新：复制链接改为对象原地址，收窄访达「打开方式」登记，并修正多窗口、传输取消、检查器与收藏路径等边界问题。
 
-## 下载 Ossuno 1.0.5
+## 下载 Ossuno 1.0.6
 
-- [Apple Silicon 版（M 系列芯片）](https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.5/Ossuno-1.0.5-arm64.dmg)
-- [Intel 版（x86_64）](https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.5/Ossuno-1.0.5-x86_64.dmg)
+- [Apple Silicon 版（M 系列芯片）](https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.6/Ossuno-1.0.6-arm64.dmg)
+- [Intel 版（x86_64）](https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.6/Ossuno-1.0.6-x86_64.dmg)
 
 两个安装包都需要 macOS 15 或更高版本。不确定芯片类型时，可在苹果菜单的「关于本机」中查看“芯片”或“处理器”。
 
 ## 重要：从旧版手动升级
 
-**从 1.0.4 或更早版本升级到 1.0.5 必须手动下载并安装。**
+**从 1.0.4 或更早版本升级到 1.0.5 或更高版本必须手动下载并安装。**
 
-1.0.5 将 Bundle ID 从 `studio.ossuno.oss` 更正为 `app.ihopeful.Ossuno`。Sparkle 不能用不同 Bundle ID 的新应用直接替换旧应用，因此旧版上的更新检查只会显示迁移说明并引导打开下载页，不会执行自动替换。
+1.0.5 将 Bundle ID 从 `studio.ossuno.oss` 更正为 `app.ihopeful.Ossuno`。Sparkle 不能用不同 Bundle ID 的新应用直接替换旧应用，因此旧版上的更新检查只会显示迁移说明并引导打开下载页，不会执行自动替换。1.0.6 继续使用 `app.ihopeful.Ossuno`；已安装 1.0.5 的用户可通过「Ossuno → 检查更新…」升级。
 
 1. 退出正在运行的旧版 Ossuno。
-2. 下载与 Mac 芯片匹配的 1.0.5 DMG。
+2. 下载与 Mac 芯片匹配的 1.0.6 DMG。
 3. 打开 DMG，将 Ossuno 拖入「应用程序」，并在 Finder 询问时确认替换旧副本。
-4. 首次启动 1.0.5，按下方步骤处理 Gatekeeper 提示。
+4. 首次启动 1.0.6，按下方步骤处理 Gatekeeper 提示。
 
-1.0.5 会迁移旧应用的偏好与账号显示配置，并继续查找原服务名下的钥匙串凭证。由于应用身份已变更，macOS 可能会要求你允许 1.0.5 访问这些钥匙串项目；允许后无需重新输入 AccessKey。通知权限也可能针对新 Bundle ID 再次弹出授权请求。完成迁移后，后续使用 `app.ihopeful.Ossuno` 的版本可恢复正常的应用内更新流程。
+1.0.5 起会迁移旧应用的偏好与账号显示配置，并继续查找原服务名下的钥匙串凭证。由于应用身份已变更，macOS 可能会要求你允许 1.0.6 访问这些钥匙串项目；允许后无需重新输入 AccessKey。通知权限也可能针对新 Bundle ID 再次弹出授权请求。完成迁移后，后续使用 `app.ihopeful.Ossuno` 的版本可恢复正常的应用内更新流程。
 
 ## 改进
 
-- Bundle ID 更正为 `app.ihopeful.Ossuno`；Apple Silicon 与 Intel 发布构建号分别更新为 13 和 12。
-- 使用新 Ossuno 图标替换应用图标目录、README、官网、网站 favicon 与 Web App Manifest 资产，并为公开资产使用新文件名避免旧缓存。
-- 使用 1.0.5 最新界面重拍浏览与添加账号截图；截图中的账号、Bucket、对象、路径、URL 与凭证字段均为虚拟测试数据，不包含真实 OSS 信息。
-- 为构建号低于 12 的旧应用生成 Sparkle 信息更新，确保旧 Bundle ID 只显示手动迁移说明，不尝试安装新身份的应用。
+- 复制链接、Markdown 与 HTML 使用对象原地址，不再附加临时签名查询参数。
+- 收窄访达「打开方式」登记的类型，避免出现在几乎所有图片和文本文件上。
+- 未选择存储空间时从访达打开文件会提示先添加账号并选择 Bucket，并优先交给已打开 Bucket 的窗口。
+- 删除与其他云端整理互斥；检查器在只选中子文件夹时显示该文件夹，对象权限改为读取 `getObjectACL`。
+- 暂停后再取消传输会等任务结束后再清理检查点，避免检查点被错误保留。
+- 设置中修改账号后，其他已打开窗口会刷新存储空间列表；移动并「保留两者」时会更新受影响的收藏路径。
+- 补齐新建窗口（⌘N）、从剪贴板上传与添加账号的菜单快捷键；大文件夹列表截断后会持续提示。
+- 将 HEIC 转为 JPEG 时说明转换是有损的，可能丢失 HDR、实况图和元数据。
+- Apple Silicon 与 Intel 发布构建号分别更新为 15 和 14。
 
 ## 系统要求
 
@@ -59,48 +64,53 @@
 
 仅在确认安装包来自本仓库的 GitHub Releases 时放行。详细背景见 [Apple 的安全打开说明](https://support.apple.com/zh-cn/102445)。
 ]]></description>
-            <enclosure url="https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.5/Ossuno-1.0.5-arm64.dmg" length="4045831" type="application/octet-stream" sparkle:edSignature="CFpVgYzoXYHQVXLPy02dDgCXFjElEm1vRobWD7iTy/Ol6zvu55Si/K/T779XWlTFqLomNyLTSVnAackMA7/4Bg=="/>
+            <enclosure url="https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.6/Ossuno-1.0.6-arm64.dmg" length="4051813" type="application/octet-stream" sparkle:edSignature="ayVYqlvJVRBzmts3BoLrEgNgYw/IFxbpNeDJszEYQlT6b5r1/X/sSHytSeQORc1zT695DF1PSHB7eHuZlSgWCQ=="/>
         </item>
         <item>
-            <title>1.0.5</title>
-            <pubDate>Fri, 04 Sep 2026 17:25:02 +0800</pubDate>
-            <link>https://github.com/ihopefulChina/Ossuno/releases/tag/v1.0.5</link>
+            <title>1.0.6</title>
+            <pubDate>Tue, 08 Sep 2026 14:06:28 +0800</pubDate>
+            <link>https://github.com/ihopefulChina/Ossuno/releases/tag/v1.0.6</link>
             <sparkle:informationalUpdate>
                 <sparkle:belowVersion>12</sparkle:belowVersion>
             </sparkle:informationalUpdate>
-            <sparkle:version>12</sparkle:version>
-            <sparkle:shortVersionString>1.0.5</sparkle:shortVersionString>
+            <sparkle:version>14</sparkle:version>
+            <sparkle:shortVersionString>1.0.6</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[# Ossuno 1.0.5
+            <description sparkle:format="markdown"><![CDATA[# Ossuno 1.0.6
 
-1.0.5 统一了应用身份与品牌资产：更正 Bundle ID，替换全套应用与网站图标，并用仅包含虚拟测试数据的最新界面截图更新 README 和官网。
+1.0.6 是一次稳定性与日常体验更新：复制链接改为对象原地址，收窄访达「打开方式」登记，并修正多窗口、传输取消、检查器与收藏路径等边界问题。
 
-## 下载 Ossuno 1.0.5
+## 下载 Ossuno 1.0.6
 
-- [Apple Silicon 版（M 系列芯片）](https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.5/Ossuno-1.0.5-arm64.dmg)
-- [Intel 版（x86_64）](https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.5/Ossuno-1.0.5-x86_64.dmg)
+- [Apple Silicon 版（M 系列芯片）](https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.6/Ossuno-1.0.6-arm64.dmg)
+- [Intel 版（x86_64）](https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.6/Ossuno-1.0.6-x86_64.dmg)
 
 两个安装包都需要 macOS 15 或更高版本。不确定芯片类型时，可在苹果菜单的「关于本机」中查看“芯片”或“处理器”。
 
 ## 重要：从旧版手动升级
 
-**从 1.0.4 或更早版本升级到 1.0.5 必须手动下载并安装。**
+**从 1.0.4 或更早版本升级到 1.0.5 或更高版本必须手动下载并安装。**
 
-1.0.5 将 Bundle ID 从 `studio.ossuno.oss` 更正为 `app.ihopeful.Ossuno`。Sparkle 不能用不同 Bundle ID 的新应用直接替换旧应用，因此旧版上的更新检查只会显示迁移说明并引导打开下载页，不会执行自动替换。
+1.0.5 将 Bundle ID 从 `studio.ossuno.oss` 更正为 `app.ihopeful.Ossuno`。Sparkle 不能用不同 Bundle ID 的新应用直接替换旧应用，因此旧版上的更新检查只会显示迁移说明并引导打开下载页，不会执行自动替换。1.0.6 继续使用 `app.ihopeful.Ossuno`；已安装 1.0.5 的用户可通过「Ossuno → 检查更新…」升级。
 
 1. 退出正在运行的旧版 Ossuno。
-2. 下载与 Mac 芯片匹配的 1.0.5 DMG。
+2. 下载与 Mac 芯片匹配的 1.0.6 DMG。
 3. 打开 DMG，将 Ossuno 拖入「应用程序」，并在 Finder 询问时确认替换旧副本。
-4. 首次启动 1.0.5，按下方步骤处理 Gatekeeper 提示。
+4. 首次启动 1.0.6，按下方步骤处理 Gatekeeper 提示。
 
-1.0.5 会迁移旧应用的偏好与账号显示配置，并继续查找原服务名下的钥匙串凭证。由于应用身份已变更，macOS 可能会要求你允许 1.0.5 访问这些钥匙串项目；允许后无需重新输入 AccessKey。通知权限也可能针对新 Bundle ID 再次弹出授权请求。完成迁移后，后续使用 `app.ihopeful.Ossuno` 的版本可恢复正常的应用内更新流程。
+1.0.5 起会迁移旧应用的偏好与账号显示配置，并继续查找原服务名下的钥匙串凭证。由于应用身份已变更，macOS 可能会要求你允许 1.0.6 访问这些钥匙串项目；允许后无需重新输入 AccessKey。通知权限也可能针对新 Bundle ID 再次弹出授权请求。完成迁移后，后续使用 `app.ihopeful.Ossuno` 的版本可恢复正常的应用内更新流程。
 
 ## 改进
 
-- Bundle ID 更正为 `app.ihopeful.Ossuno`；Apple Silicon 与 Intel 发布构建号分别更新为 13 和 12。
-- 使用新 Ossuno 图标替换应用图标目录、README、官网、网站 favicon 与 Web App Manifest 资产，并为公开资产使用新文件名避免旧缓存。
-- 使用 1.0.5 最新界面重拍浏览与添加账号截图；截图中的账号、Bucket、对象、路径、URL 与凭证字段均为虚拟测试数据，不包含真实 OSS 信息。
-- 为构建号低于 12 的旧应用生成 Sparkle 信息更新，确保旧 Bundle ID 只显示手动迁移说明，不尝试安装新身份的应用。
+- 复制链接、Markdown 与 HTML 使用对象原地址，不再附加临时签名查询参数。
+- 收窄访达「打开方式」登记的类型，避免出现在几乎所有图片和文本文件上。
+- 未选择存储空间时从访达打开文件会提示先添加账号并选择 Bucket，并优先交给已打开 Bucket 的窗口。
+- 删除与其他云端整理互斥；检查器在只选中子文件夹时显示该文件夹，对象权限改为读取 `getObjectACL`。
+- 暂停后再取消传输会等任务结束后再清理检查点，避免检查点被错误保留。
+- 设置中修改账号后，其他已打开窗口会刷新存储空间列表；移动并「保留两者」时会更新受影响的收藏路径。
+- 补齐新建窗口（⌘N）、从剪贴板上传与添加账号的菜单快捷键；大文件夹列表截断后会持续提示。
+- 将 HEIC 转为 JPEG 时说明转换是有损的，可能丢失 HDR、实况图和元数据。
+- Apple Silicon 与 Intel 发布构建号分别更新为 15 和 14。
 
 ## 系统要求
 
@@ -117,7 +127,7 @@
 
 仅在确认安装包来自本仓库的 GitHub Releases 时放行。详细背景见 [Apple 的安全打开说明](https://support.apple.com/zh-cn/102445)。
 ]]></description>
-            <enclosure url="https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.5/Ossuno-1.0.5-x86_64.dmg" length="4255778" type="application/octet-stream" sparkle:edSignature="yQqjysTP4Dc5mMgaX65s7KRQGl+21+SAatya9GYfm+tkjMkIqLVH2sbZFR4NLlZ7kcgbkKvW3YoKlCGX8JrSAQ=="/>
+            <enclosure url="https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.6/Ossuno-1.0.6-x86_64.dmg" length="4263017" type="application/octet-stream" sparkle:edSignature="rZCDT3udxretLLIyo79/Dp6aEUFK3UDr2PmhHpKI3DLqxJG7nSxBjVdTGLH4QNLe/n/J8Ljh26qq0ZdJXct9BQ=="/>
         </item>
     </channel>
 </rss>

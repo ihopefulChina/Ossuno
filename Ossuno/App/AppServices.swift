@@ -137,7 +137,11 @@ final class AppServices {
 
     func routeIncoming(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
-        if let target = focused ?? sessions.first {
+        let target = sessions.first(where: { $0 === focused && $0.hasWorkspace })
+            ?? sessions.first(where: \.hasWorkspace)
+            ?? focused
+            ?? sessions.first
+        if let target {
             target.ingestIncoming(urls)
         } else {
             pendingIncomingURLs.append(contentsOf: urls)

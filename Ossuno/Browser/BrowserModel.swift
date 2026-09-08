@@ -58,6 +58,7 @@ final class BrowserModel {
             guard prefix != oldValue else { return }
             transientlyRevealedKey = nil
             searchText = ""
+            isListingTruncated = false
             clearSelection()
         }
     }
@@ -90,6 +91,7 @@ final class BrowserModel {
         }
     }
     var isLoading = false
+    var isListingTruncated = false
     var errorMessage: String?
     var dropTargets: Set<String> = []
 
@@ -170,7 +172,11 @@ final class BrowserModel {
     }
 
     var primarySelection: OSSObject? {
-        visibleObjects.first(where: { selectedKeys.contains($0.key) })
+        if let focusedKey, selectedKeys.contains(focusedKey),
+           let focused = visibleObjects.first(where: { $0.key == focusedKey }) {
+            return focused
+        }
+        return visibleObjects.first(where: { selectedKeys.contains($0.key) })
     }
 
     func select(key: String, modifiers: BrowserSelectionModifiers) {
@@ -309,6 +315,7 @@ final class BrowserModel {
         prefix = ""
         folders = []
         objects = []
+        isListingTruncated = false
         clearSelection()
         errorMessage = nil
         isLoading = false
@@ -349,6 +356,7 @@ final class BrowserModel {
         self.imagesOnly = imagesOnly
         folders = listing.folders
         objects = listing.objects
+        isListingTruncated = listing.isTruncated
         reconcileVisibleState()
         lastRefresh = .now
         errorMessage = nil

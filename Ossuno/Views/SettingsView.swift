@@ -125,6 +125,9 @@ struct SettingsView: View {
                     model.transfers.uploadSpeedLimit = value
                 }
                 Toggle("将 HEIC 转为 JPEG", isOn: $model.settings.convertHEIC)
+                Text("转换会生成有损 JPEG，可能丢失 HDR、实况图和元数据。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("下载") {
@@ -158,14 +161,6 @@ struct SettingsView: View {
                 Text("“保留两者”会像访达一样自动添加 2、3 等编号。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            }
-
-            Section("分享") {
-                Picker("签名链接有效期", selection: $model.settings.signedLinkLifetime) {
-                    ForEach(SignedLinkLifetime.allCases) { lifetime in
-                        Text(lifetime.title).tag(lifetime)
-                    }
-                }
             }
 
             Section("进行传输时") {

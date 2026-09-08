@@ -121,6 +121,13 @@ struct BrowserView: View {
                 .padding(.vertical, 7)
                 .background(.bar, in: Capsule())
                 .padding(.top, 8)
+            } else if modelRef.browser.isListingTruncated, !modelRef.isBucketSearchActive {
+                Text("只加载了前几页，全选、删除和下载只会作用于已显示的项目。")
+                    .font(.callout.weight(.medium))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(.bar, in: Capsule())
+                    .padding(.top, 8)
             }
         }
     }
@@ -181,6 +188,9 @@ struct BrowserView: View {
         var parts: [String] = []
         if folders > 0 { parts.append("\(folders) 个文件夹") }
         if files > 0 { parts.append("\(files) 项") }
+        if model.browser.isListingTruncated {
+            parts.append("仅显示前几页")
+        }
         return parts.joined(separator: " · ")
     }
 

@@ -351,6 +351,31 @@ struct AppModelTests {
         #expect(model.browser.backStack.isEmpty)
     }
 
+    @Test func copyURLsUsesTheOriginalObjectAddressWithoutSignedQuery() {
+        let account = Self.account()
+        let bucket = Self.bucket()
+        let model = Self.model(account: account, bucket: bucket, transport: AccountTestTransport())
+        model.browser.imagesOnly = false
+        model.browser.objects = [
+            OSSObject(key: "art/hero.png", size: 10, etag: "a", lastModified: nil, storageClass: "Standard")
+        ]
+        model.browser.replaceSelection(["art/hero.png"])
+
+        #expect(account.prefersSignedLinks)
+
+        model.copyURLs(style: .plain)
+        let plain = NSPasteboard.general.string(forType: .string)
+        #expect(plain == "https://design-assets.oss-cn-hangzhou.aliyuncs.com/art/hero.png")
+        #expect(plain?.contains("?") != true)
+        #expect(model.banner?.text == "已复制 1 条链接")
+
+        model.copyURLs(style: .markdown)
+        #expect(
+            NSPasteboard.general.string(forType: .string)
+                == "![hero.png](https://design-assets.oss-cn-hangzhou.aliyuncs.com/art/hero.png)"
+        )
+    }
+
     @Test func copySelectionMakesPasteAvailable() {
         let account = Self.account()
         let bucket = Self.bucket()
@@ -521,6 +546,72 @@ struct AppModelTests {
 
         model.clearVisibleSelection()
         #expect(model.inspectorSurface == .searchEmpty)
+    }
+
+    @Test func inspectorSurfaceUsesTheSelectedFolderInsteadOfTheCurrentPrefix() {
+        let account = Self.account()
+        let bucket = Self.bucket()
+        let model = Self.model(account: account, bucket: bucket, transport: AccountTestTransport())
+        model.browser.imagesOnly = false
+        model.browser.prefix = ""
+        model.browser.folders = [OSSFolder(prefix: "art/")]
+        model.browser.objects = [
+            OSSObject(key: "cover.png", size: 10, etag: "a", lastModified: nil, storageClass: "Standard")
+        ]
+        model.browser.replaceSelection(["art/"])
+
+        if case .folder(let prefix) = model.inspectorSurface {
+            #expect(prefix == "art/")
+        } else {
+            Issue.record("expected a selected-folder inspector surface, got \(model.inspectorSurface)")
+        }
+    }
+
+    @Test func openingFilesWithoutAWorkspacePromptsInsteadOfStayingSilent() {
+        let model = AppModel(kind: .settings, services: AppServices(accounts: []))
+        let url = URL(fileURLWithPath: "/tmp/cover.png")
+
+        model.ingestIncoming([url])
+
+        #expect(model.pendingOpenURLs == [url])
+        #expect(model.banner?.isError == true)
+        #expect(model.banner?.text.contains("存储空间") == true)
+        #expect(model.showAccountSheet)
+    }
+
+    @Test func incomingFilesPreferAWindowThatAlreadyHasAWorkspace() {
+        let account = Self.account()
+        let bucket = Self.bucket()
+        let services = AppServices(accounts: [account])
+        let idle = AppModel(kind: .window, services: services) { _, _ in
+            OSSClient(
+                credentials: OSSCredentials(accessKeyId: "test", accessKeySecret: "secret", securityToken: nil),
+                region: "cn-hangzhou",
+                endpointHost: "oss-cn-hangzhou.aliyuncs.com",
+                bucket: nil,
+                transport: AccountTestTransport()
+            )
+        }
+        let ready = AppModel(kind: .window, services: services) { _, _ in
+            OSSClient(
+                credentials: OSSCredentials(accessKeyId: "test", accessKeySecret: "secret", securityToken: nil),
+                region: "cn-hangzhou",
+                endpointHost: "oss-cn-hangzhou.aliyuncs.com",
+                bucket: bucket.name,
+                transport: AccountTestTransport()
+            )
+        }
+        idle.selectedAccountID = account.id
+        ready.selectedAccountID = account.id
+        ready.buckets = [bucket]
+        ready.selectedBucketName = bucket.name
+        services.focused = idle
+
+        let url = URL(fileURLWithPath: "/tmp/hero.png")
+        services.routeIncoming([url])
+
+        #expect(ready.pendingOpenURLs == [url])
+        #expect(idle.pendingOpenURLs.isEmpty)
     }
 
     @Test func searchDeleteDialogKeepsPendingNamesAfterResultsClear() async {

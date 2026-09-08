@@ -13,7 +13,6 @@
 			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>public.image</string>
 				<string>public.jpeg</string>
 				<string>public.png</string>
 				<string>com.compuserve.gif</string>
@@ -24,9 +23,6 @@
 				<string>com.microsoft.bmp</string>
 				<string>public.tiff</string>
 				<string>public.avif</string>
-				<string>public.json</string>
-				<string>public.plain-text</string>
-				<string>public.text</string>
 			</array>
 		</dict>
 	</array>

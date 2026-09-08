@@ -70,6 +70,29 @@ struct BrowserModelTests {
         #expect(model.primarySelection?.key == "b.txt")
     }
 
+    @Test func primaryObjectFollowsTheFocusedSelectedFile() {
+        let model = Self.model()
+        model.replaceSelection(["b.txt", "c.txt"])
+        model.selectForContextMenu(key: "c.txt")
+
+        #expect(model.primarySelection?.key == "c.txt")
+    }
+
+    @Test func applyRecordsWhenTheListingWasTruncated() {
+        let model = Self.model()
+        model.apply(
+            ObjectListing(
+                folders: [OSSFolder(prefix: "folder/")],
+                objects: [],
+                isTruncated: true,
+                nextToken: "next"
+            ),
+            imagesOnly: false
+        )
+
+        #expect(model.isListingTruncated)
+    }
+
     @Test func movingSelectionFollowsDisplayedOrder() {
         let model = Self.model()
         model.select(key: "a.txt", modifiers: [])

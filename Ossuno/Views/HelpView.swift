@@ -86,6 +86,7 @@ struct HelpView: View {
             }
         case .shortcuts:
             Grid(alignment: .leading, horizontalSpacing: 28, verticalSpacing: 12) {
+                shortcut("Command–N", "新建窗口")
                 shortcut("Command–O", "上传")
                 shortcut("Command–X", "剪切，再粘贴即可移动")
                 shortcut("Command–C", "复制选中的对象或文件夹")

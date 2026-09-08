@@ -8,7 +8,7 @@ enum BannerAction: Equatable {
 
 enum InspectorSurface: Equatable {
     case unavailable
-    case folder
+    case folder(prefix: String)
     case searchEmpty
     case object(OSSObject)
     case multiple(count: Int, folderCount: Int, objects: [OSSObject])
@@ -754,6 +754,19 @@ final class AppModel {
             pendingOwnedTemporaryURLs = []
             upload(urls: queued, ownedTemporaryURLs: owned)
         }
+        notifyOtherSessionsOfAccountChange()
+    }
+
+    private func notifyOtherSessionsOfAccountChange() {
+        for session in services.sessions where session !== self {
+            session.refreshAfterExternalAccountChange()
+        }
+    }
+
+    func refreshAfterExternalAccountChange() {
+        pruneIfNeeded()
+        guard selectedAccount != nil else { return }
+        Task { await refreshBuckets(selecting: selectedBucketName) }
     }
 
     func deleteAccount(_ account: OSSAccount) {
@@ -1119,6 +1132,9 @@ final class AppModel {
 
     func ingestIncoming(_ urls: [URL]) {
         pendingOpenURLs.append(contentsOf: urls)
+        guard !hasWorkspace else { return }
+        showAccountSheet = accounts.isEmpty
+        present("先添加账号并选择存储空间", error: true)
     }
 
     func confirmPendingOpen() {
@@ -1281,6 +1297,8 @@ final class AppModel {
             keys = browser.orderedVisibleKeys.filter(actionableSelectionKeys.contains)
         }
         guard !keys.isEmpty else { return }
+        isOrganizingCloud = true
+        defer { isOrganizingCloud = false }
         let previousCloudUndo = lastCloudUndoOperation
         let previousDeleteUndo = lastDeleteUndoOperation
         var receipts: [OSSDeleteReceipt] = []
@@ -1804,7 +1822,6 @@ final class AppModel {
 
             var resolvedMappings: [CloudObjectMapping] = []
             var reserved = Set(mappings.map(\.destinationKey)).union(existing)
-            var changedMapping = false
             for var mapping in mappings {
                 guard existing.contains(mapping.destinationKey) else {
                     resolvedMappings.append(mapping)
@@ -1812,7 +1829,7 @@ final class AppModel {
                 }
                 switch conflictPolicy {
                 case .skip:
-                    changedMapping = true
+                    break
                 case .replace:
                     resolvedMappings.append(mapping)
                 case .keepBoth:
@@ -1822,7 +1839,6 @@ final class AppModel {
                         client: client
                     )
                     reserved.insert(mapping.destinationKey)
-                    changedMapping = true
                     resolvedMappings.append(mapping)
                 case .ask:
                     // Conflicts were returned above. This branch only keeps the
@@ -1842,8 +1858,10 @@ final class AppModel {
                 client: client
             )
             noteBucketMutated()
-            if mode == .move, !changedMapping {
-                for pair in movedPrefixes {
+            if mode == .move {
+                for pair in movedPrefixes where resolvedMappings.contains(where: { mapping in
+                    mapping.sourceKey == pair.source || mapping.sourceKey.hasPrefix(pair.source)
+                }) {
                     favorites.replacePrefix(
                         accountID: accountID,
                         bucketName: bucketName,
@@ -1864,10 +1882,13 @@ final class AppModel {
                     title: "撤销移动",
                     mappings: resolvedMappings,
                     committedDestinationIdentities: operationResult.committedDestinationIdentities,
-                    favoriteMoves: (changedMapping ? [] : movedPrefixes).map {
-                        CloudFavoriteMove(
-                            sourcePrefix: $0.source,
-                            destinationPrefix: $0.destination
+                    favoriteMoves: movedPrefixes.compactMap { pair in
+                        guard resolvedMappings.contains(where: { mapping in
+                            mapping.sourceKey == pair.source || mapping.sourceKey.hasPrefix(pair.source)
+                        }) else { return nil }
+                        return CloudFavoriteMove(
+                            sourcePrefix: pair.source,
+                            destinationPrefix: pair.destination
                         )
                     },
                     sourceSelection: Set(payload.objectKeys + payload.folderPrefixes),
@@ -3030,21 +3051,12 @@ final class AppModel {
 
     func copyURLs(style: LinkStyle = .plain) {
         guard let account = selectedAccount, let bucket = selectedBucket else { return }
-        let client = account.prefersSignedLinks ? makeClient() : nil
-        var usedSigned = false
         let urls = actionableObjects.compactMap { object -> String? in
-            let resolved: URL?
-            if let client,
-               let signed = client.presignedURL(
-                   key: object.key,
-                   expires: settings.signedLinkLifetime.rawValue
-               ) {
-                usedSigned = true
-                resolved = signed
-            } else {
-                resolved = account.publicURL(bucketName: bucket.name, bucket: bucket, key: object.key)
-            }
-            guard let url = resolved else { return nil }
+            guard let url = account.publicURL(
+                bucketName: bucket.name,
+                bucket: bucket,
+                key: object.key
+            ) else { return nil }
             switch style {
             case .plain: return url.absoluteString
             case .markdown:
@@ -3057,7 +3069,7 @@ final class AppModel {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(urls.joined(separator: "\n"), forType: .string)
         Haptics.alignment()
-        present(usedSigned ? "已复制签名链接，\(settings.signedLinkLifetime.title)内有效" : "已复制 \(urls.count) 条链接")
+        present("已复制 \(urls.count) 条链接")
     }
 
     var inspectorObject: OSSObject? {
@@ -3092,8 +3104,11 @@ final class AppModel {
         if let object = browser.primarySelection {
             return .object(object)
         }
+        if let folder = browser.selectedFolders.first, browser.selectedKeys.count == 1 {
+            return .folder(prefix: folder.prefix)
+        }
         if selectedBucket != nil {
-            return .folder
+            return .folder(prefix: browser.prefix)
         }
         return .unavailable
     }
@@ -3117,7 +3132,10 @@ final class AppModel {
         isLoadingHead = true
         inspectorText = nil
         let task = Task { () throws -> (ObjectHead, String?) in
-            let head = try await client.head(key: object.key)
+            var head = try await client.head(key: object.key)
+            if let acl = try? await client.getObjectACL(key: object.key) {
+                head.acl = acl.title
+            }
             var text: String?
             if object.isText,
                object.size <= 512_000,

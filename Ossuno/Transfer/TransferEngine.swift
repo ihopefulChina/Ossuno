@@ -372,13 +372,14 @@ final class TransferEngine {
               job.isActive || job.status == .paused
         else { return }
         userIntents[id] = .cancel
+        let hasLiveTask = tasks[id] != nil
         tasks[id]?.cancel()
         mutate(id) { current in
             current.status = .cancelled
             current.finishedAt = .now
         }
-        if job.status != .running {
-            tasks[id] = nil
+        if !hasLiveTask {
+            userIntents[id] = nil
             let descriptor = retryDescriptors[id]
             let checkpoint = checkpoints[id]
             Task { [weak self] in
@@ -434,6 +435,14 @@ final class TransferEngine {
     }
 
     func recordCheckpoint(_ id: UUID, checkpoint: TransferCheckpoint?) {
+        if userIntents[id] == .cancel { return }
+        guard let job = jobs.first(where: { $0.id == id }) else { return }
+        switch job.status {
+        case .cancelled, .failed, .completed:
+            return
+        case .queued, .running, .paused:
+            break
+        }
         checkpoints[id] = checkpoint
         // Checkpoint callbacks fire per chunk; persist at most every ~0.5 s
         // per job instead of rewriting the whole journal per chunk. The final
@@ -658,11 +667,7 @@ final class TransferEngine {
         expectedDestination: OSSObjectIdentity?
     ) async {
         guard await waitForSlot(id: id, kind: .upload) else {
-            if Task.isCancelled {
-                await finishCancellation(id: id)
-            } else if jobs.first(where: { $0.id == id })?.status == .cancelled {
-                finishResource(id)
-            }
+            await finishCancellation(id: id)
             return
         }
         defer {
@@ -901,11 +906,7 @@ final class TransferEngine {
         overwriteIdentity: LocalFileIdentity?
     ) async {
         guard await waitForSlot(id: id, kind: .download) else {
-            if Task.isCancelled {
-                await finishCancellation(id: id)
-            } else if jobs.first(where: { $0.id == id })?.status == .cancelled {
-                finishResource(id)
-            }
+            await finishCancellation(id: id)
             return
         }
         defer {

@@ -267,6 +267,27 @@ struct TransferEngineTests {
         #expect(journal.records.first?.checkpoint == checkpoint)
     }
 
+    @Test func cancelledJobsIgnoreLateCheckpointCallbacks() {
+        let engine = TransferEngine()
+        let job = Self.persistedJob(status: .cancelled)
+        let checkpoint = TransferCheckpoint.upload(
+            MultipartUploadCheckpoint(
+                bucketName: "bucket",
+                objectKey: job.objectKey,
+                sourceSize: job.total,
+                sourceModifiedAt: .distantPast,
+                partSize: OSSClient.partSize,
+                uploadID: "u-late",
+                completedParts: []
+            )
+        )
+        engine.jobs = [job]
+
+        engine.recordCheckpoint(job.id, checkpoint: checkpoint)
+
+        #expect(engine.checkpoint(for: job.id) == nil)
+    }
+
     @Test func interruptedCheckpointRestoresAsPausedInsteadOfFailed() throws {
         let source = try Self.temporaryFile(named: "paused-upload.txt")
         defer { try? FileManager.default.removeItem(at: source) }
@@ -549,7 +570,7 @@ struct TransferEngineTests {
         #expect(!FileManager.default.fileExists(atPath: temporary.path))
     }
 
-    @Test func cancellingAQueuedUploadImmediatelyFinishesItsResource() async throws {
+    @Test func cancellingAQueuedUploadFinishesItsResource() async throws {
         let firstURL = try Self.temporaryFile(named: "first.txt")
         let secondURL = try Self.temporaryFile(named: "second.txt")
         defer {
@@ -596,7 +617,7 @@ struct TransferEngineTests {
         engine.cancel(queuedID)
 
         #expect(engine.jobs.last?.status == .cancelled)
-        #expect(secondCounter.value == 1)
+        try await Self.waitUntil { secondCounter.value == 1 }
         #expect(firstCounter.value == 0)
 
         await transport.resumeFirst()

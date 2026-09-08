@@ -81,6 +81,13 @@ derived_dir_for_architecture() {
     print -r -- "$repo_dir/.build/release-v$version_slug-$mode-$1"
 }
 
+unregister_from_launch_services() {
+    local app_path="$1"
+    local lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+    [[ -x "$lsregister" && -d "$app_path" ]] || return 0
+    "$lsregister" -u "$app_path" >/dev/null 2>&1 || true
+}
+
 assert_thin_macho_tree() {
     local root="$1"
     local expected_architecture="$2"
@@ -194,6 +201,7 @@ build_architecture() {
         "${build_settings[@]}"
 
     [[ -d "$built_app_path" ]] || fail "built app is missing for $architecture"
+    unregister_from_launch_services "$built_app_path"
     actual_version="$(plutil -extract CFBundleShortVersionString raw "$built_app_path/Contents/Info.plist")"
     actual_build="$(plutil -extract CFBundleVersion raw "$built_app_path/Contents/Info.plist")"
     actual_bundle_identifier="$(plutil -extract CFBundleIdentifier raw "$built_app_path/Contents/Info.plist")"

@@ -52,8 +52,8 @@ struct InspectorView: View {
             selectionInfo(folderCount: folderCount, objects: objects)
         case .object(let object):
             objectInfo(object)
-        case .folder:
-            folderInfo
+        case .folder(let prefix):
+            folderInfo(prefix: prefix)
         case .searchEmpty:
             ContentUnavailableView(
                 "没有可显示的信息",
@@ -77,11 +77,11 @@ struct InspectorView: View {
             return object.name
         case .searchEmpty:
             return "搜索结果"
-        case .folder:
-            if !model.browser.prefix.isEmpty {
-                return PathTemplate.lastComponent(model.browser.prefix)
+        case .folder(let prefix):
+            if prefix.isEmpty {
+                return model.selectedBucket?.name ?? "当前项目"
             }
-            return model.selectedBucket?.name ?? "当前项目"
+            return PathTemplate.lastComponent(prefix)
         case .unavailable:
             return "当前项目"
         }
@@ -202,35 +202,50 @@ struct InspectorView: View {
         }
     }
 
-    private var folderInfo: some View {
-        VStack(alignment: .leading, spacing: 12) {
+    private func folderInfo(prefix: String) -> some View {
+        let isCurrent = prefix == model.browser.prefix
+        let name = prefix.isEmpty
+            ? (model.selectedBucket?.name ?? "存储空间")
+            : PathTemplate.lastComponent(prefix)
+        return VStack(alignment: .leading, spacing: 12) {
             Image(systemName: "folder.fill")
                 .font(.system(size: 48, weight: .regular))
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(.tint)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
-            Text(model.browser.prefix.isEmpty ? (model.selectedBucket?.name ?? "存储空间") : PathTemplate.lastComponent(model.browser.prefix))
+            Text(name)
                 .font(.title3.weight(.semibold))
-            Text(model.browser.prefix.isEmpty ? "/" : "/" + model.browser.prefix)
+            Text(prefix.isEmpty ? "/" : "/" + prefix)
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
-            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
-                infoRow("文件夹", "\(model.browser.folders.count)")
-                infoRow("对象", "\(model.browser.objects.count)")
-                if let region = model.selectedBucket?.regionLabel {
-                    infoRow("地域", region)
+            if isCurrent {
+                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+                    infoRow("文件夹", "\(model.browser.folders.count)")
+                    infoRow("对象", "\(model.browser.objects.count)")
+                    if let region = model.selectedBucket?.regionLabel {
+                        infoRow("地域", region)
+                    }
                 }
-            }
-            .font(.callout)
-            Text("把图片、JSON 或文本拖进窗口，就会上传到这里。")
                 .font(.callout)
-                .foregroundStyle(.secondary)
-                .padding(.top, 8)
-            Button("下载当前文件夹") {
-                model.downloadCurrentPrefix()
+                Text("把图片、JSON 或文本拖进窗口，就会上传到这里。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 8)
+                Button("下载当前文件夹") {
+                    model.downloadCurrentPrefix()
+                }
+                .controlSize(.regular)
+            } else {
+                Text("这是当前目录中选中的文件夹。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 8)
+                Button("下载此文件夹") {
+                    model.downloadFolder(OSSFolder(prefix: prefix))
+                }
+                .controlSize(.regular)
             }
-            .controlSize(.regular)
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
