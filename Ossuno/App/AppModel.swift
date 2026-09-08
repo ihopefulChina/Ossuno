@@ -796,7 +796,7 @@ final class AppModel {
             useTransferAccelerate: draft.useTransferAccelerate,
             createdAt: draft.createdAt
         )
-        var updatedAccounts = try Self.mergingSavedAccount(
+        let updatedAccounts = try Self.mergingSavedAccount(
             account,
             into: accounts,
             isUpdatingExisting: isUpdatingExisting
