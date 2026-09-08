@@ -101,7 +101,7 @@ final class TransferEngine {
         var ownedTemporaryURLs: Set<URL> = []
     }
 
-    struct LocalFileIdentity: Equatable, Sendable {
+    struct LocalFileIdentity: Equatable, Codable, Sendable {
         var size: Int64
         var modifiedAt: Date?
         var resourceIdentifier: String?
@@ -316,7 +316,8 @@ final class TransferEngine {
                         bucket: bucket,
                         rootBookmark: rootBookmark,
                         object: item.object,
-                        relativeDestination: relativeDestination
+                        relativeDestination: relativeDestination,
+                        overwriteIdentity: overwriteDestinations[dest.standardizedFileURL]
                     )
                 )
             }
@@ -389,9 +390,7 @@ final class TransferEngine {
             finishResource(id)
         }
         pumpFinished()
-        if activeCount == 0, !jobs.contains(where: { $0.status == .paused }) {
-            onAllFinished?()
-        }
+        notifyIfAllFinished()
     }
 
     func cancelAll() {
@@ -500,13 +499,18 @@ final class TransferEngine {
                 )
             }
         case .download(let download):
+            var overwriteDestinations: [URL: LocalFileIdentity] = [:]
+            if let identity = download.overwriteIdentity {
+                overwriteDestinations[download.destination.standardizedFileURL] = identity
+            }
             enqueueDownloadJobs(
                 items: [(download.object, download.destination)],
                 client: download.client,
                 account: download.account,
                 bucket: download.bucket,
                 scopedRoot: download.scopedRoot,
-                speedLimit: download.speedLimit
+                speedLimit: download.speedLimit,
+                overwriteDestinations: overwriteDestinations
             )
         }
     }
@@ -707,6 +711,9 @@ final class TransferEngine {
                     self?.recordProgress(id, transferred: sent, total: total)
                 }
             })
+            if await finishIfCancelledAfterSuccessfulWrite(id: id) {
+                return
+            }
             mutate(id) { job in
                 job.status = .completed
                 job.transferred = job.total
@@ -720,10 +727,8 @@ final class TransferEngine {
                 NSSound(named: "Glass")?.play()
             }
             onUploadFinished?()
-        } catch is CancellationError {
-            await finishCancellation(id: id)
         } catch {
-            if userIntents[id] == .pause {
+            if shouldHonorUserIntent(id: id, error: error) {
                 await finishCancellation(id: id)
                 return
             }
@@ -780,6 +785,56 @@ final class TransferEngine {
             startTask(for: id)
         }
         pumpFinished()
+        notifyIfAllFinished()
+    }
+
+    private func shouldHonorUserIntent(id: UUID, error: Error) -> Bool {
+        error is CancellationError
+            || userIntents[id] == .cancel
+            || userIntents[id] == .pause
+    }
+
+    /// Cancel after a committed write still marks the job cancelled. Pause
+    /// after a committed write stays `.completed`: the bytes already landed, and
+    /// marking the job paused would retry it into a collision.
+    private func finishIfCancelledAfterSuccessfulWrite(id: UUID) async -> Bool {
+        switch userIntents[id] {
+        case .cancel:
+            await finishCancellation(id: id)
+            return true
+        case .pause:
+            userIntents[id] = nil
+            return false
+        case nil:
+            return false
+        }
+    }
+
+    private func notifyIfAllFinished() {
+        // Wait until live tasks have released their slots. Cancelling a running
+        // job marks it finished immediately, but the in-flight PUT may still be
+        // unwinding as WriteOutcomeUncertain.
+        guard activeCount == 0,
+              !jobs.contains(where: { $0.status == .paused }),
+              tasks.isEmpty
+        else { return }
+        onAllFinished?()
+    }
+
+    func hasActiveWork(accountID: UUID, bucketName: String) -> Bool {
+        jobs.contains { job in
+            guard job.status == .queued || job.status == .running || job.status == .paused else {
+                return false
+            }
+            switch retryDescriptors[job.id] {
+            case .upload(let upload):
+                return upload.account.id == accountID && upload.bucket?.name == bucketName
+            case .download(let download):
+                return download.account?.id == accountID && download.bucket?.name == bucketName
+            case nil:
+                return false
+            }
+        }
     }
 
     private func runPreparedUpload(id: UUID, upload: UploadRetryDescriptor) async {
@@ -808,11 +863,8 @@ final class TransferEngine {
                 mutate(id) { job in
                     job.total = prepared.size
                 }
-            } catch is CancellationError {
-                await finishCancellation(id: id)
-                return
             } catch {
-                if userIntents[id] == .pause {
+                if shouldHonorUserIntent(id: id, error: error) {
                     await finishCancellation(id: id)
                     return
                 }
@@ -822,10 +874,6 @@ final class TransferEngine {
                     job.finishedAt = .now
                 }
                 finishResource(id)
-                pumpFinished()
-                if activeCount == 0, !jobs.contains(where: { $0.status == .paused }) {
-                    onAllFinished?()
-                }
                 return
             }
         }
@@ -952,6 +1000,9 @@ final class TransferEngine {
                     }
                 }
             )
+            if await finishIfCancelledAfterSuccessfulWrite(id: id) {
+                return
+            }
             mutate(id) { job in
                 job.status = .completed
                 job.transferred = max(job.transferred, job.total)
@@ -961,10 +1012,8 @@ final class TransferEngine {
             checkpoints[id] = nil
             finishResource(id)
             Haptics.commit()
-        } catch is CancellationError {
-            await finishCancellation(id: id)
         } catch {
-            if userIntents[id] == .pause {
+            if shouldHonorUserIntent(id: id, error: error) {
                 await finishCancellation(id: id)
                 return
             }
@@ -1013,11 +1062,6 @@ final class TransferEngine {
             runningDownloads = max(0, runningDownloads - 1)
         }
         pumpFinished()
-        // Paused jobs are deliberately not active; only fire "all finished"
-        // when nothing is running, queued, or paused.
-        if activeCount == 0, !jobs.contains(where: { $0.status == .paused }) {
-            onAllFinished?()
-        }
     }
 
     private func pumpFinished() {
@@ -1203,7 +1247,7 @@ final class TransferEngine {
                     destination: destination,
                     scopedRoot: root,
                     speedLimit: downloadSpeedLimit,
-                    overwriteIdentity: nil
+                    overwriteIdentity: download.overwriteIdentity
                 )
             )
         }

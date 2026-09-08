@@ -128,7 +128,7 @@ struct RootView: View {
                 return event
             }
             if event.keyCode == 51, flags.isEmpty, !model.actionableSelectionKeys.isEmpty {
-                guard !model.isOrganizingCloud else { return event }
+                guard !model.isSelectedBucketOrganizing else { return event }
                 model.requestDeleteSelection()
                 return nil
             }
@@ -185,7 +185,7 @@ struct RootView: View {
                 return nil
             }
             if event.keyCode == 36, flags.isEmpty {
-                guard !model.isOrganizingCloud else { return event }
+                guard !model.isSelectedBucketOrganizing else { return event }
                 if model.browser.beginRenaming() {
                     return nil
                 }
@@ -494,6 +494,7 @@ private struct RootPresentation: ViewModifier {
             ) {
                 Button("覆盖") { model.confirmOverwrite() }
                     .disabled(model.overwritePrompt?.canOverwriteSafely != true)
+                Button("保留两者") { model.keepBothOverwriteConflicts() }
                 Button("跳过这些文件") { model.skipOverwriteConflicts() }
                 Button("取消", role: .cancel) { model.cancelOverwrite() }
             } message: {
@@ -526,7 +527,7 @@ private struct RootPresentation: ViewModifier {
             .confirmationDialog(
                 "上传 \(model.pendingOpenURLs.count) 个文件到当前文件夹？",
                 isPresented: Binding(
-                    get: { !model.pendingOpenURLs.isEmpty && model.hasWorkspace },
+                    get: { model.shouldConfirmPendingOpen },
                     set: { if !$0 { model.cancelPendingOpen() } }
                 ),
                 titleVisibility: .visible

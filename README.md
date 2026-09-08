@@ -58,12 +58,12 @@ Ossuno 把高频 OSS 操作放进一个符合 macOS 使用习惯的窗口：从�
 
 ### 安装
 
-1. 打开 [Ossuno 1.0.6 Release](https://github.com/ihopefulChina/Ossuno/releases/tag/v1.0.6)，下载与芯片匹配的安装包：[Apple Silicon（M 系列）](https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.6/Ossuno-1.0.6-arm64.dmg) · [Intel（x86_64）](https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.6/Ossuno-1.0.6-x86_64.dmg)。不确定架构时，在苹果菜单的「关于本机」中查看“芯片”或“处理器”。
+1. 打开 [Ossuno 1.0.7 Release](https://github.com/ihopefulChina/Ossuno/releases/tag/v1.0.7)，下载与芯片匹配的安装包：[Apple Silicon（M 系列）](https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.7/Ossuno-1.0.7-arm64.dmg) · [Intel（x86_64）](https://github.com/ihopefulChina/Ossuno/releases/download/v1.0.7/Ossuno-1.0.7-x86_64.dmg)。不确定架构时，在苹果菜单的「关于本机」中查看“芯片”或“处理器”。
 2. 打开 DMG，将 Ossuno 拖入「应用程序」。
 3. 启动 Ossuno，添加一个权限最小化的 RAM 子账号，选择地域并打开 Bucket。
 
 > [!IMPORTANT]
-> **从 1.0.4 或更早版本升级到 1.0.5 或更高版本必须手动下载。** 1.0.5 将 Bundle ID 从 `studio.ossuno.oss` 更正为 `app.ihopeful.Ossuno`，Sparkle 只会为旧身份显示升级说明，不会直接替换应用。退出旧版后，下载对应芯片的 1.0.6 DMG 并将 Ossuno 拖入「应用程序」。1.0.5 起会迁移旧偏好与账号显示配置，并继续查找原钥匙串凭证；macOS 可能会要求你允许新应用身份访问钥匙串，也可能再次请求通知权限。已安装 1.0.5 的用户可通过应用内更新升级到 1.0.6。
+> **从 1.0.4 或更早版本升级到 1.0.5 或更高版本必须手动下载。** 1.0.5 将 Bundle ID 从 `studio.ossuno.oss` 更正为 `app.ihopeful.Ossuno`，Sparkle 只会为旧身份显示升级说明，不会直接替换应用。退出旧版后，下载对应芯片的 1.0.7 DMG 并将 Ossuno 拖入「应用程序」。1.0.5 起会迁移旧偏好与账号显示配置，并继续查找原钥匙串凭证；macOS 可能会要求你允许新应用身份访问钥匙串，也可能再次请求通知权限。已安装 1.0.5 或 1.0.6 的用户可通过应用内更新升级到 1.0.7。
 
 > [!WARNING]
 > 当前两个 DMG 均采用 **ad-hoc** 代码签名，不是 Developer ID 签名，且未经 Apple 公证。首次启动通常会被 Gatekeeper 拦截。请先确认安装包来自本仓库的 GitHub Releases，再前往「系统设置 → 隐私与安全」，在“安全性”区域选择「仍要打开」。详情见 [Apple 的安全打开说明](https://support.apple.com/zh-cn/102445)。
@@ -156,6 +156,7 @@ MCP 的凭证与桌面 App 账号相互独立；默认仅允许访问桌面、�
 | 操作 | 快捷键 |
 | --- | --- |
 | 添加账号 | `⇧⌘A` |
+| 新建窗口 | `⌘N` |
 | 剪切 / 复制 / 粘贴 | `⌘X` / `⌘C` / `⌘V` |
 | 上传 / 从剪贴板上传 | `⌘O` / `⇧⌘V` |
 | 新建文件夹 | `⇧⌘N` |

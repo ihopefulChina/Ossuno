@@ -17,7 +17,7 @@ struct BrowserObjectContextMenu: View {
                 deferConfirmation: true
             )
         }
-        .disabled(model.isOrganizingCloud)
+        .disabled(model.isSelectedBucketOrganizing)
         if showsRevealInFolder {
             Button("显示所在文件夹") {
                 Task { await model.openSearchResult(object) }
@@ -53,10 +53,11 @@ struct BrowserObjectContextMenu: View {
         Button("重命名") {
             model.requestRename(key: object.key)
         }
-        .disabled(model.isOrganizingCloud)
+        .disabled(model.isSelectedBucketOrganizing)
         Button("对象属性") {
             model.selectForContextMenu(object.key)
             model.presentObjectProperties(for: object)
         }
+        .disabled(model.isSelectedBucketOrganizing)
     }
 }

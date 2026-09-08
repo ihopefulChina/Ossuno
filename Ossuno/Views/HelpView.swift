@@ -56,6 +56,7 @@ struct HelpView: View {
                 Text("单击选择，双击打开文件夹或预览文件。按住 Command 多选，Shift 连续选择；Return 重命名，空格快速查看，Command–1 / Command–2 切换网格与列表。")
                 Text("搜索栏可切换“当前文件夹”和“当前 Bucket”。Bucket 搜索会显示扫描进度，可按类型、大小和修改日期筛选，也可随时停止。")
                 Text("把云端文件或文件夹直接拖到访达，Ossuno 会在放下后安全下载；多选会放进“Ossuno 下载”文件夹。")
+                Text("复制的链接是对象原地址，不含签名。私有对象用浏览器打开会返回 403；需要公开访问时，请把对象设为公共读。")
             }
         case .transfers:
             helpSection("暂停、继续与恢复") {

@@ -39,6 +39,10 @@ extension TransferJob {
             && kind == .download
             && localURL.map { FileManager.default.fileExists(atPath: $0.path) } == true
     }
+
+    var canCopyPublicURL: Bool {
+        kind == .upload && status == .completed && publicURL != nil
+    }
 }
 
 struct TransferWindow: View {
@@ -183,7 +187,7 @@ struct TransferWindow: View {
         if job.canRevealInFinder {
             Button("在访达中显示") { reveal(job) }
         }
-        if job.kind == .upload, job.publicURL != nil {
+        if job.canCopyPublicURL {
             Button("复制链接") { copyLink(job) }
         }
         if job.isActive || job.status == .paused {
@@ -206,6 +210,9 @@ struct TransferWindow: View {
     }
 
     private func subtitle(for job: TransferJob) -> String {
+        if let reason = model.transfers.unavailableRetryReason(job.id), !reason.isEmpty {
+            return reason
+        }
         if job.status == .failed, let error = job.errorMessage, !error.isEmpty {
             return error
         }

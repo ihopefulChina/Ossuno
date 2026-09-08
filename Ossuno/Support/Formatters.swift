@@ -256,7 +256,8 @@ enum ImageKind {
              "webp",
              "bmp", "dib",
              "tif", "tiff",
-             "heic", "heif":
+             "heic", "heif", "heics",
+             "avif":
             true
         default:
             false

@@ -32,6 +32,7 @@ struct CrossBucketPreflight: Identifiable, Sendable {
     var overwrite: Bool
     var renamedConflicts: Int
     var existingDestinations: Set<String>
+    var folderMoves: [CloudFavoriteMove]
 }
 
 struct CloudDestinationBackup: Equatable, Sendable {
@@ -101,17 +102,18 @@ enum CrossBucketOperation {
                 throw CloudObjectOperationError.invalidPrefix
             }
             let rootName = PathTemplate.lastComponent(String(prefix.dropLast())) + "/"
-            for object in objects.sorted(by: { $0.key < $1.key }) where !object.isFolderPlaceholder {
+            for object in objects.sorted(by: { $0.key < $1.key }) {
                 guard object.key.hasPrefix(prefix) else {
                     throw CloudObjectOperationError.keyOutsideSource(object.key)
                 }
-                let relative = String(object.key.dropFirst(prefix.count))
                 mappings.append(
                     CrossBucketMapping(
                         sourceKey: object.key,
-                        destinationKey: PathTemplate.join(
-                            PathTemplate.join(destinationPrefix, key: rootName),
-                            key: relative
+                        destinationKey: destinationKey(
+                            destinationPrefix: destinationPrefix,
+                            sourcePrefix: prefix,
+                            rootName: rootName,
+                            sourceKey: object.key
                         ),
                         expectedSize: object.size
                     )
@@ -154,6 +156,23 @@ enum CrossBucketOperation {
         return mappings.contains(where: { $0.expectedSize > maximumSingleCopyBytes })
             ? .relay
             : .serverSide
+    }
+
+    static func destinationKey(
+        destinationPrefix: String,
+        sourcePrefix: String,
+        rootName: String,
+        sourceKey: String
+    ) -> String {
+        let relative = String(sourceKey.dropFirst(sourcePrefix.count))
+        var destination = PathTemplate.join(
+            PathTemplate.join(destinationPrefix, key: rootName),
+            key: relative
+        )
+        if sourceKey.hasSuffix("/"), !destination.hasSuffix("/") {
+            destination += "/"
+        }
+        return destination
     }
 
     static func rollbackDestinations(

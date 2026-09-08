@@ -111,7 +111,7 @@ struct BrowserView: View {
             }
         }
         .overlay(alignment: .top) {
-            if modelRef.isOrganizingCloud {
+            if modelRef.isSelectedBucketOrganizing {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("正在整理云端项目…")
@@ -502,7 +502,9 @@ struct BrowserView: View {
         Divider()
         Button("上传") { showFileImporter = true }
         Button("从剪贴板上传") { modelRef.pasteFromClipboard() }
+            .disabled(modelRef.isSelectedBucketOrganizing)
         Button("新建文件夹") { modelRef.wantsNewFolder = true }
+            .disabled(modelRef.isSelectedBucketOrganizing)
         Divider()
         Button("下载当前文件夹") { modelRef.downloadCurrentPrefix() }
         Button("刷新") { Task { await modelRef.refreshListing() } }
@@ -525,7 +527,7 @@ struct BrowserView: View {
                 deferConfirmation: true
             )
         }
-        .disabled(modelRef.isOrganizingCloud)
+        .disabled(modelRef.isSelectedBucketOrganizing)
         Divider()
         Button(modelRef.isFavorite(prefix: folder.prefix) ? "从常用中移除" : "添加到常用") {
             modelRef.toggleFavorite(prefix: folder.prefix, name: folder.name)
@@ -549,7 +551,7 @@ struct BrowserView: View {
         Button("重命名") {
             modelRef.requestRename(key: folder.prefix)
         }
-        .disabled(modelRef.isOrganizingCloud)
+        .disabled(modelRef.isSelectedBucketOrganizing)
     }
 
     @ViewBuilder
@@ -768,6 +770,7 @@ private struct PathBar: View {
             }
             model.wantsNewFolder = true
         }
+        .disabled(model.isSelectedBucketOrganizing)
         Button("下载此文件夹") {
             if isCurrent {
                 model.downloadCurrentPrefix()

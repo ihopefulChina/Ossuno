@@ -15,16 +15,24 @@ final class ObjectPropertiesModel {
     private var loadedSnapshot: OSSObjectSnapshot?
     private let client: OSSClient
     private let onSaved: @MainActor () -> Void
+    private let canMutate: @MainActor () -> Bool
 
-    init(object: OSSObject, client: OSSClient, onSaved: @escaping @MainActor () -> Void) {
+    init(
+        object: OSSObject,
+        client: OSSClient,
+        onSaved: @escaping @MainActor () -> Void,
+        canMutate: @escaping @MainActor () -> Bool = { true }
+    ) {
         self.object = object
         self.client = client
         self.onSaved = onSaved
+        self.canMutate = canMutate
     }
 
     var canSave: Bool {
         !isLoading && !isSaving && !tagsUnavailable && saveUnavailableMessage == nil
             && loadedSnapshot != nil && draft.isValid && draft != original
+            && canMutate()
     }
 
     func load() async {
@@ -66,6 +74,10 @@ final class ObjectPropertiesModel {
     }
 
     func save() async -> Bool {
+        guard canMutate() else {
+            errorMessage = "请等待当前云端整理完成"
+            return false
+        }
         guard canSave, var snapshot = loadedSnapshot else { return false }
         isSaving = true
         errorMessage = nil

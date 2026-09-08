@@ -4,7 +4,7 @@ enum ProcessLifetime {
     @MainActor
     private static var transfersActive = false
     @MainActor
-    private static var organizing = false
+    private static var organizingCount = 0
     @MainActor
     private static var didDisable = false
 
@@ -16,7 +16,11 @@ enum ProcessLifetime {
 
     @MainActor
     static func setOrganizing(_ active: Bool) {
-        organizing = active
+        if active {
+            organizingCount += 1
+        } else {
+            organizingCount = max(0, organizingCount - 1)
+        }
         apply()
     }
 
@@ -26,7 +30,7 @@ enum ProcessLifetime {
     /// transfer, so only transition the state.
     @MainActor
     private static func apply() {
-        let shouldDisable = transfersActive || organizing
+        let shouldDisable = transfersActive || organizingCount > 0
         guard shouldDisable != didDisable else { return }
         if shouldDisable {
             ProcessInfo.processInfo.disableSuddenTermination()

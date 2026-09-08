@@ -375,6 +375,134 @@ struct TransferEngineTests {
         #expect(TransferConflictPlanner.availableKey(for: "art/hero.png", existing: existing) == "art/hero 3.png")
         #expect(TransferConflictPlanner.availableKey(for: "art/Notes/", existing: existing) == "art/Notes 2/")
         #expect(TransferConflictPlanner.availableKey(for: "README", existing: existing) == "README 2")
+        #expect(TransferConflictPlanner.availableKey(for: "art/Notes/", existing: ["art/Notes/a.txt"]) == "art/Notes 2/")
+    }
+
+    @Test func keepBothRenamesACollidingFolderAsAUnit() {
+        let resolved = TransferConflictPlanner.resolveKeepBoth(
+            mappings: [
+                (source: "photos/a.jpg", destination: "dest/photos/a.jpg"),
+                (source: "photos/b.jpg", destination: "dest/photos/b.jpg"),
+                (source: "cover.png", destination: "dest/cover.png")
+            ],
+            folderMoves: [
+                (source: "photos/", destination: "dest/photos/")
+            ],
+            existing: [
+                "dest/photos/a.jpg",
+                "dest/cover.png"
+            ]
+        )
+
+        #expect(resolved.folderMoves.map(\.source) == ["photos/"])
+        #expect(resolved.folderMoves.map(\.destination) == ["dest/photos 2/"])
+        #expect(resolved.mappings.map(\.source) == [
+            "photos/a.jpg",
+            "photos/b.jpg",
+            "cover.png"
+        ])
+        #expect(resolved.mappings.map(\.destination) == [
+            "dest/photos 2/a.jpg",
+            "dest/photos 2/b.jpg",
+            "dest/cover 2.png"
+        ])
+    }
+
+    @Test func keepBothFolderConfirmationDoesNotTreatOwnChildrenAsOccupation() {
+        let occupied: Set<String> = []
+        let children = ["dest/photos/a.jpg", "dest/photos/b.jpg"]
+        #expect(
+            TransferConflictPlanner.availableKey(
+                for: "dest/photos/",
+                existing: occupied.union(children)
+            ) == "dest/photos 2/"
+        )
+        #expect(
+            TransferConflictPlanner.availableKey(
+                for: "dest/photos/",
+                existing: TransferConflictPlanner.reservedForConfirmingFolder(
+                    occupied: occupied,
+                    otherFolderDestinations: ["dest/notes/"]
+                )
+            ) == "dest/photos/"
+        )
+        #expect(
+            TransferConflictPlanner.availableKey(
+                for: "dest/photos 2/",
+                existing: TransferConflictPlanner.reservedForConfirmingFolder(
+                    occupied: ["dest/photos/a.jpg"],
+                    otherFolderDestinations: []
+                )
+            ) == "dest/photos 2/"
+        )
+    }
+
+    @Test func folderRootsComeFromRelativePathsNotTheDestinationPrefix() {
+        #expect(
+            Set(TransferConflictPlanner.folderRoots(
+                for: ["photos/a.jpg", "photos/b.jpg", "cover.png"],
+                destinationPrefix: "photos/"
+            )).isEmpty
+        )
+        #expect(
+            Set(TransferConflictPlanner.folderRoots(
+                for: ["archive/photos/a.jpg", "archive/photos/b.jpg", "archive/cover.png"],
+                destinationPrefix: "archive/"
+            )) == ["archive/photos/"]
+        )
+    }
+
+    @Test func rootUploadsKeepFolderRootsUnlessATemplateRewritesThePath() {
+        let keys = ["photos/a.jpg", "photos/b.jpg", "cover.png"]
+        #expect(
+            Set(TransferConflictPlanner.folderRoots(
+                for: keys,
+                destinationPrefix: "",
+                applyTemplate: true,
+                template: ""
+            )) == ["photos/"]
+        )
+        #expect(
+            TransferConflictPlanner.folderRoots(
+                for: keys,
+                destinationPrefix: "",
+                applyTemplate: true,
+                template: "assets/{yyyy}/{filename}"
+            ).isEmpty
+        )
+        #expect(
+            Set(TransferConflictPlanner.folderRoots(
+                for: keys,
+                destinationPrefix: "",
+                applyTemplate: false,
+                template: "assets/{yyyy}/{filename}"
+            )) == ["photos/"]
+        )
+    }
+
+    @Test func keepBothRenamesDroppedFoldersAsAUnitWithoutTouchingLooseFiles() {
+        let keys = ["archive/photos/a.jpg", "archive/photos/b.jpg", "archive/cover.png"]
+        let existing: Set<String> = ["archive/photos/a.jpg"]
+        let resolutions = TransferConflictPlanner.plan(
+            keys: keys,
+            existing: existing,
+            policy: .keepBoth,
+            folderRoots: ["archive/photos/"]
+        )
+
+        #expect(resolutions == [
+            .renamed("archive/photos 2/a.jpg"),
+            .renamed("archive/photos 2/b.jpg"),
+            .useOriginal
+        ])
+
+        let fileInFolder = TransferConflictPlanner.plan(
+            keys: ["photos/a.jpg"],
+            existing: ["photos/a.jpg"],
+            policy: .keepBoth,
+            folderRoots: []
+        )
+        #expect(fileInFolder == [.renamed("photos/a 2.jpg")])
     }
 
     @Test func conflictPolicyPlansTheWholeBatchDeterministically() {
@@ -425,6 +553,20 @@ struct TransferEngineTests {
         #expect(download.canRevealInFinder)
         #expect(!upload.canRevealInFinder)
         #expect(!missing.canRevealInFinder)
+    }
+
+    @Test func copyLinkIsAvailableOnlyForACompletedUpload() {
+        var upload = Self.persistedJob(status: .completed)
+        upload.kind = .upload
+        upload.publicURL = URL(string: "https://example.com/hero.png")
+        var running = upload
+        running.status = .running
+        var download = upload
+        download.kind = .download
+
+        #expect(upload.canCopyPublicURL)
+        #expect(!running.canCopyPublicURL)
+        #expect(!download.canCopyPublicURL)
     }
 
     @Test func clearingHistoryKeepsActiveTransfers() {
@@ -623,6 +765,59 @@ struct TransferEngineTests {
         await transport.resumeFirst()
         try await Self.waitUntil { engine.jobs.first?.status == .completed }
         #expect(firstCounter.value == 1)
+    }
+
+    @Test func cancellingARunningUploadStaysCancelledWhenWriteOutcomeIsUncertain() async throws {
+        let source = try Self.temporaryFile(named: "cancel-running.txt")
+        defer { try? FileManager.default.removeItem(at: source) }
+        let transport = CancellableUploadTransport()
+        let client = Self.client(transport: transport)
+        let account = OSSAccount(
+            id: UUID(),
+            name: "Test",
+            accessKeyId: "test",
+            regionID: "cn-hangzhou",
+            endpointOverride: "",
+            cdnDomain: "",
+            defaultACL: .private,
+            prefixTemplate: "",
+            useTransferAccelerate: false,
+            createdAt: .now
+        )
+        let bucket = OSSBucket(
+            name: "design-assets",
+            regionID: "cn-hangzhou",
+            location: "oss-cn-hangzhou",
+            extranetEndpoint: "oss-cn-hangzhou.aliyuncs.com",
+            createdAt: nil
+        )
+        let engine = TransferEngine()
+        var finished = 0
+        engine.onAllFinished = { finished += 1 }
+        let plan = TransferEngine.UploadPlan(
+            items: [
+                Self.item(url: source, key: "cancel-running.txt", resource: TransferResource())
+            ],
+            skipped: 0
+        )
+
+        engine.enqueue(
+            plan: plan,
+            client: client,
+            account: account,
+            bucket: bucket,
+            settings: Self.settings(concurrency: 1)
+        )
+        try await Self.waitUntil { engine.jobs.first?.status == .running }
+        #expect(engine.hasActiveWork(accountID: account.id, bucketName: bucket.name))
+        let jobID = try #require(engine.jobs.first?.id)
+        engine.cancel(jobID)
+
+        #expect(finished == 0)
+        try await Self.waitUntil { finished == 1 }
+        #expect(engine.jobs.first?.status == .cancelled)
+        #expect(engine.jobs.first?.errorMessage == nil)
+        #expect(!engine.hasActiveWork(accountID: account.id, bucketName: bucket.name))
     }
 
     @Test func abandoningAPlanDeletesExplicitlyOwnedSourceFiles() async throws {
@@ -1105,6 +1300,71 @@ struct TransferEngineTests {
         #expect(engine.jobs.first?.errorMessage?.contains("发生了变化") == true)
     }
 
+    @Test func restoredDownloadOverwriteIdentityStillReplacesTheApprovedFile() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "ossuno-download-restore-overwrite-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let destination = directory.appending(path: "approved.txt")
+        try Data("old-approved".utf8).write(to: destination)
+        let identity = try TransferEngine.LocalFileIdentity.capture(destination)
+        let downloaded = directory.appending(path: "remote.tmp")
+        try Data("remote-data".utf8).write(to: downloaded)
+        let rootBookmark = Data([7, 7, 7, 7])
+        let bucket = OSSBucket(
+            name: "bucket",
+            regionID: "cn-hangzhou",
+            location: "oss-cn-hangzhou",
+            extranetEndpoint: "oss-cn-hangzhou.aliyuncs.com",
+            createdAt: nil
+        )
+        var job = Self.persistedJob(status: .failed)
+        job.kind = .download
+        job.objectKey = "remote/approved.txt"
+        job.title = "approved.txt"
+        job.total = 11
+        job.transferred = 0
+        let record = PersistedTransfer(
+            job: job,
+            retry: .download(
+                PersistedDownloadRetry(
+                    accountID: Self.fixedAccount.id,
+                    bucket: bucket,
+                    rootBookmark: rootBookmark,
+                    object: OSSObject(
+                        key: "remote/approved.txt",
+                        size: 11,
+                        etag: "stable-etag",
+                        lastModified: nil,
+                        storageClass: "Standard"
+                    ),
+                    relativeDestination: "approved.txt",
+                    overwriteIdentity: identity
+                )
+            )
+        )
+        let encoded = try JSONEncoder().encode(record)
+        let decoded = try JSONDecoder().decode(PersistedTransfer.self, from: encoded)
+        #expect(decoded.retry == record.retry)
+
+        let engine = TransferEngine(
+            journal: MemoryTransferJournal(records: [decoded]),
+            bookmarks: MappingTransferBookmarks(map: [rootBookmark: directory]),
+            clientProvider: { _, _ in
+                Self.client(transport: RetryTransport(downloadURL: downloaded, failFirstDownloadRange: false))
+            }
+        )
+        engine.restore(accounts: [Self.fixedAccount])
+        let restoredID = try #require(engine.jobs.first?.id)
+        engine.retry(restoredID)
+        try await Self.waitUntil {
+            engine.jobs.count == 2 && engine.jobs.last?.isActive == false
+        }
+
+        #expect(engine.jobs.last?.status == .completed)
+        #expect(try Data(contentsOf: destination) == Data("remote-data".utf8))
+    }
+
     @Test func finishingOneUploadNeverExceedsConfiguredConcurrency() async throws {
         let urls = try (1...4).map { try Self.temporaryFile(named: "concurrency-\($0).txt") }
         defer { urls.forEach { try? FileManager.default.removeItem(at: $0) } }
@@ -1422,6 +1682,39 @@ private actor BlockingUploadTransport: OSSHTTPTransport {
             )
         )
         continuation = nil
+    }
+}
+
+private actor CancellableUploadTransport: OSSHTTPTransport {
+    func send(
+        _ request: URLRequest,
+        body: OSSHTTPBody,
+        download: Bool,
+        onProgress: (@Sendable (Int64, Int64) -> Void)?
+    ) async throws -> OSSHTTPResult {
+        if request.url?.query?.contains("versioning") == true {
+            return OSSHTTPResult(
+                status: 200,
+                headers: [:],
+                data: Data("<VersioningConfiguration/>".utf8),
+                temporaryDownloadURL: nil
+            )
+        }
+        if request.httpMethod == "HEAD" {
+            return OSSHTTPResult(
+                status: 404,
+                headers: [:],
+                data: Data("<Error><Code>NoSuchKey</Code></Error>".utf8),
+                temporaryDownloadURL: nil
+            )
+        }
+        try await Task.sleep(for: .seconds(30))
+        return OSSHTTPResult(
+            status: 200,
+            headers: [:],
+            data: Data(),
+            temporaryDownloadURL: nil
+        )
     }
 }
 

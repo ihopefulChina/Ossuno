@@ -152,6 +152,8 @@ struct SignerTests {
         #expect(ImageKind.contentType(for: "mark.svg") == "image/svg+xml")
         #expect(ImageKind.imgProcessable(key: "loop.gif"))
         #expect(ImageKind.imgProcessable(key: "cover.webp"))
+        #expect(ImageKind.imgProcessable(key: "shot.heics"))
+        #expect(ImageKind.imgProcessable(key: "poster.avif"))
         #expect(!ImageKind.imgProcessable(key: "mark.svg"))
         #expect(!ImageKind.isImage(key: "notes.txt"))
         #expect(ImageKind.isText(key: "config.JSON"))

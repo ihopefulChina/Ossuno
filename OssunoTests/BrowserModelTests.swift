@@ -310,6 +310,64 @@ struct BrowserModelTests {
         #expect(store.items.first?.prefix == "new/sub/")
     }
 
+    @Test func movingAFolderAcrossBucketsRelocatesFavoriteLocations() {
+        let defaults = Self.defaults()
+        let sourceAccount = UUID()
+        let destinationAccount = UUID()
+        let store = FavoriteStore(defaults: defaults)
+        store.add(.init(
+            accountID: sourceAccount,
+            bucketName: "assets",
+            prefix: "photos/sub/",
+            name: "sub"
+        ))
+
+        store.replacePrefix(
+            accountID: sourceAccount,
+            bucketName: "assets",
+            source: "photos/",
+            destination: "archive/photos/",
+            destinationAccountID: destinationAccount,
+            destinationBucketName: "archive"
+        )
+
+        #expect(store.items.first?.accountID == destinationAccount)
+        #expect(store.items.first?.bucketName == "archive")
+        #expect(store.items.first?.prefix == "archive/photos/sub/")
+        #expect(store.items.first?.name == "sub")
+    }
+
+    @Test func skippedChildrenPreventRelocatingAFolderFavorite() {
+        #expect(
+            FavoriteStore.didMoveFolderCompletely(
+                sourcePrefix: "photos/",
+                originalSourceKeys: ["photos/a.jpg", "photos/b.jpg"],
+                remainingSourceKeys: ["photos/a.jpg", "photos/b.jpg"]
+            )
+        )
+        #expect(
+            !FavoriteStore.didMoveFolderCompletely(
+                sourcePrefix: "photos/",
+                originalSourceKeys: ["photos/a.jpg", "photos/b.jpg"],
+                remainingSourceKeys: ["photos/a.jpg"]
+            )
+        )
+        #expect(
+            !FavoriteStore.didMoveFolderCompletely(
+                sourcePrefix: "photos/",
+                originalSourceKeys: ["photos/a.jpg"],
+                remainingSourceKeys: []
+            )
+        )
+        #expect(
+            FavoriteStore.didMoveFolderCompletely(
+                sourcePrefix: "photos/",
+                originalSourceKeys: ["cover.png", "photos/a.jpg"],
+                remainingSourceKeys: ["photos/a.jpg"]
+            )
+        )
+    }
+
     @Test func nativeTableSelectionKeepsAKeyboardFocusAndAnchor() {
         let model = Self.model()
 

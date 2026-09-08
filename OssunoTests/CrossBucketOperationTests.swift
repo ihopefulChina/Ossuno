@@ -46,7 +46,7 @@ struct CrossBucketOperationTests {
         #expect(plan.method == .relay)
     }
 
-    @Test func placeholderOnlyFolderProducesNoMappings() throws {
+    @Test func placeholderFoldersProduceMappingsWithTrailingSlash() throws {
         let plan = try CrossBucketOperation.plan(
             sourceAccountID: UUID(),
             destinationAccountID: UUID(),
@@ -59,9 +59,32 @@ struct CrossBucketOperationTests {
             ]]
         )
 
-        #expect(plan.mappings.isEmpty)
+        #expect(plan.mappings.map(\.sourceKey) == ["Empty/"])
+        #expect(plan.mappings.map(\.destinationKey) == ["archive/Empty/"])
         #expect(CrossBucketOperation.emptyResultMessage(hadMappings: false) == "源文件夹为空，没有可复制的对象")
         #expect(CrossBucketOperation.emptyResultMessage(hadMappings: true) == "所有同名项目都已跳过")
+    }
+
+    @Test func nestedFolderPlaceholdersKeepTrailingSlash() throws {
+        let plan = try CrossBucketOperation.plan(
+            sourceAccountID: UUID(),
+            destinationAccountID: UUID(),
+            sourceRegion: "a",
+            destinationRegion: "b",
+            destinationPrefix: "archive/",
+            objectKeys: [],
+            folders: ["Design/": [
+                OSSObject(key: "Design/", size: 0, etag: "", lastModified: nil, storageClass: "Standard"),
+                OSSObject(key: "Design/icons/", size: 0, etag: "", lastModified: nil, storageClass: "Standard"),
+                OSSObject(key: "Design/icons/app.png", size: 10, etag: "", lastModified: nil, storageClass: "Standard")
+            ]]
+        )
+
+        #expect(plan.mappings.map(\.destinationKey) == [
+            "archive/Design/",
+            "archive/Design/icons/",
+            "archive/Design/icons/app.png"
+        ])
     }
 
     @Test func moveRollbackKeepsDestinationsWhoseSourcesWereAlreadyDeleted() {

@@ -198,6 +198,20 @@ enum CloudObjectOperation {
         return (!objectKeys.isEmpty || !folderPrefixes.isEmpty) && objectsStay && foldersStay
     }
 
+    static func completedTopLevelItemCount(
+        objectKeys: [String],
+        folderPrefixes: [String],
+        resolvedSourceKeys: [String]
+    ) -> Int {
+        let objects = objectKeys.filter { key in
+            resolvedSourceKeys.contains(key)
+        }.count
+        let folders = folderPrefixes.filter { prefix in
+            resolvedSourceKeys.contains { $0 == prefix || $0.hasPrefix(prefix) }
+        }.count
+        return objects + folders
+    }
+
     static func copyDestination(
         source: String,
         destinationPrefix: String,

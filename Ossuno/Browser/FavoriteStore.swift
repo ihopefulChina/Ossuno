@@ -56,18 +56,40 @@ final class FavoriteStore {
         save()
     }
 
+    /// A folder favorite should move only when every planned child under that
+    /// prefix still remains after skip/conflict filtering.
+    static func didMoveFolderCompletely(
+        sourcePrefix: String,
+        originalSourceKeys: [String],
+        remainingSourceKeys: [String]
+    ) -> Bool {
+        let originalCount = originalSourceKeys.filter {
+            $0 == sourcePrefix || $0.hasPrefix(sourcePrefix)
+        }.count
+        let remainingCount = remainingSourceKeys.filter {
+            $0 == sourcePrefix || $0.hasPrefix(sourcePrefix)
+        }.count
+        return originalCount > 0 && originalCount == remainingCount
+    }
+
     func replacePrefix(
         accountID: UUID,
         bucketName: String,
         source: String,
-        destination: String
+        destination: String,
+        destinationAccountID: UUID? = nil,
+        destinationBucketName: String? = nil
     ) {
+        let targetAccountID = destinationAccountID ?? accountID
+        let targetBucketName = destinationBucketName ?? bucketName
         var changed = false
         for index in items.indices where
             items[index].accountID == accountID
                 && items[index].bucketName == bucketName
                 && Self.isWithin(items[index].prefix, folder: source) {
             let relative = String(items[index].prefix.dropFirst(source.count))
+            items[index].accountID = targetAccountID
+            items[index].bucketName = targetBucketName
             items[index].prefix = destination + relative
             if items[index].prefix == destination {
                 items[index].name = PathTemplate.lastComponent(destination)

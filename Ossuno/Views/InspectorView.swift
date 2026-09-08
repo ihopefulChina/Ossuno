@@ -48,8 +48,8 @@ struct InspectorView: View {
     @ViewBuilder
     private var informationContent: some View {
         switch model.inspectorSurface {
-        case .multiple(_, let folderCount, let objects):
-            selectionInfo(folderCount: folderCount, objects: objects)
+        case .multiple(let count, let folderCount, let objects):
+            selectionInfo(count: count, folderCount: folderCount, objects: objects)
         case .object(let object):
             objectInfo(object)
         case .folder(let prefix):
@@ -87,7 +87,7 @@ struct InspectorView: View {
         }
     }
 
-    private func selectionInfo(folderCount: Int, objects: [OSSObject]) -> some View {
+    private func selectionInfo(count: Int, folderCount: Int, objects: [OSSObject]) -> some View {
         let bytes = objects.reduce(Int64(0)) { $0 + $1.size }
 
         return VStack(alignment: .leading, spacing: 16) {
@@ -98,7 +98,7 @@ struct InspectorView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
 
-            Text("已选择 \(folderCount + objects.count) 项")
+            Text("已选择 \(count) 项")
                 .font(.title3.weight(.semibold))
 
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
@@ -112,7 +112,7 @@ struct InspectorView: View {
                 Button("下载") { model.downloadSelection() }
                 Spacer()
                 Button("删除", role: .destructive) { model.requestDeleteSelection() }
-                    .disabled(model.isOrganizingCloud)
+                    .disabled(model.isSelectedBucketOrganizing)
             }
         }
         .padding(20)
@@ -193,7 +193,7 @@ struct InspectorView: View {
                     Button("删除", role: .destructive) {
                         model.requestDeleteSelection()
                     }
-                    .disabled(model.isOrganizingCloud)
+                    .disabled(model.isSelectedBucketOrganizing)
                     .tint(.red)
                 }
                 .controlSize(.regular)

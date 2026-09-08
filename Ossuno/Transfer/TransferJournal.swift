@@ -81,6 +81,7 @@ struct PersistedDownloadRetry: Codable, Equatable, Sendable {
     var object: OSSObject
     var relativeDestination: String
     var allowOverwrite: Bool? = nil
+    var overwriteIdentity: TransferEngine.LocalFileIdentity? = nil
 }
 
 protocol TransferBookmarking: Sendable {

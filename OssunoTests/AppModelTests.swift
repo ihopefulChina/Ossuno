@@ -881,12 +881,180 @@ struct AppModelTests {
         ]
         model.browser.imagesOnly = false
         model.browser.replaceSelection(["a.txt"])
-        model.isOrganizingCloud = true
+        #expect(model.beginOrganizingCloud(accountID: account.id, bucketName: bucket.name))
+        defer { model.endOrganizingCloud() }
 
         model.requestDeleteSelection()
 
         #expect(model.wantsDeleteConfirmation == false)
         #expect(model.banner?.isError == true)
+    }
+
+    @Test func savingDoesNotResurrectAnAccountDeletedInAnotherWindow() throws {
+        let account = Self.account()
+        #expect(throws: AccountSaveError.accountDeleted) {
+            try AppModel.mergingSavedAccount(account, into: [], isUpdatingExisting: true)
+        }
+
+        let created = try AppModel.mergingSavedAccount(
+            account,
+            into: [],
+            isUpdatingExisting: false
+        )
+        #expect(created == [account])
+
+        var updated = account
+        updated.name = "Studio 2"
+        let replaced = try AppModel.mergingSavedAccount(
+            updated,
+            into: [account],
+            isUpdatingExisting: true
+        )
+        #expect(replaced == [updated])
+    }
+
+    @Test func organizingOneWindowBlocksTheSameBucketInAnotherWindow() {
+        let account = Self.account()
+        let bucket = Self.bucket()
+        let services = AppServices(accounts: [account])
+        let first = Self.windowModel(account: account, bucket: bucket, services: services)
+        let second = Self.windowModel(account: account, bucket: bucket, services: services)
+
+        #expect(first.beginOrganizingCloud(accountID: account.id, bucketName: bucket.name))
+        #expect(!second.beginOrganizingCloud(accountID: account.id, bucketName: bucket.name))
+        #expect(second.banner?.isError == true)
+        first.endOrganizingCloud()
+        #expect(second.beginOrganizingCloud(accountID: account.id, bucketName: bucket.name))
+        second.endOrganizingCloud()
+    }
+
+    @Test func organizingScopeDoesNotFollowTheCurrentSelection() {
+        let account = Self.account()
+        let bucket = Self.bucket()
+        var other = Self.bucket()
+        other.name = "other-assets"
+        let services = AppServices(accounts: [account])
+        let model = Self.windowModel(account: account, bucket: bucket, services: services)
+        model.buckets = [bucket, other]
+
+        #expect(model.beginOrganizingCloud(accountID: account.id, bucketName: bucket.name))
+        model.selectedBucketName = other.name
+
+        #expect(model.isOrganizing(accountID: account.id, bucketName: bucket.name))
+        #expect(!model.isOrganizing(accountID: account.id, bucketName: other.name))
+        #expect(model.isBucketOrganizing(accountID: account.id, bucketName: bucket.name))
+        #expect(!model.isBucketOrganizing(accountID: account.id, bucketName: other.name))
+        model.endOrganizingCloud()
+    }
+
+    @Test func organizingOneWindowDisablesTheSameBucketInAnotherWindow() {
+        let account = Self.account()
+        let bucket = Self.bucket()
+        let services = AppServices(accounts: [account])
+        let first = Self.windowModel(account: account, bucket: bucket, services: services)
+        let second = Self.windowModel(account: account, bucket: bucket, services: services)
+        second.browser.objects = [
+            OSSObject(key: "a.txt", size: 1, etag: "a", lastModified: nil, storageClass: "Standard")
+        ]
+        second.browser.imagesOnly = false
+        second.browser.replaceSelection(["a.txt"])
+
+        #expect(first.beginOrganizingCloud(accountID: account.id, bucketName: bucket.name))
+        #expect(second.isSelectedBucketOrganizing)
+        #expect(!second.canPaste)
+        second.requestDeleteSelection()
+        #expect(second.wantsDeleteConfirmation == false)
+        #expect(second.banner?.isError == true)
+        first.endOrganizingCloud()
+        #expect(!second.isSelectedBucketOrganizing)
+    }
+
+    @Test func skippedOrganizeItemsAreNotCountedAsCompleted() {
+        #expect(
+            CloudObjectOperation.completedTopLevelItemCount(
+                objectKeys: ["cover.png", "notes.txt"],
+                folderPrefixes: ["photos/"],
+                resolvedSourceKeys: ["cover.png", "photos/a.jpg"]
+            ) == 2
+        )
+        #expect(
+            CloudObjectOperation.completedTopLevelItemCount(
+                objectKeys: ["cover.png"],
+                folderPrefixes: ["photos/"],
+                resolvedSourceKeys: ["photos/a.jpg", "photos/b.jpg"]
+            ) == 1
+        )
+    }
+
+    @Test func activeTransfersBlockOrganizingTheSameBucket() async throws {
+        let account = Self.account()
+        let bucket = Self.bucket()
+        let engine = TransferEngine()
+        let services = AppServices(accounts: [account], transfers: engine)
+        let model = Self.windowModel(account: account, bucket: bucket, services: services)
+        let source = FileManager.default.temporaryDirectory
+            .appending(path: "ossuno-organize-lock-\(UUID().uuidString).txt")
+        try Data("test data".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+        let transport = OrganizeLockUploadTransport()
+        let client = OSSClient(
+            credentials: OSSCredentials(
+                accessKeyId: "test",
+                accessKeySecret: "secret",
+                securityToken: nil
+            ),
+            region: "cn-hangzhou",
+            endpointHost: "oss-cn-hangzhou.aliyuncs.com",
+            bucket: bucket.name,
+            transport: transport,
+            retryPolicy: OSSRetryPolicy(maxAttempts: 1, jitter: { 0 }),
+            testingVersioningStatusOverride: .disabled
+        )
+        engine.enqueue(
+            plan: TransferEngine.UploadPlan(
+                items: [
+                    TransferEngine.PlannedUpload(
+                        sourceURL: source,
+                        fileURL: source,
+                        filename: source.lastPathComponent,
+                        contentType: "text/plain",
+                        size: 9,
+                        objectKey: "lock.txt",
+                        resource: TransferResource(),
+                        failure: nil
+                    )
+                ],
+                skipped: 0
+            ),
+            client: client,
+            account: account,
+            bucket: bucket,
+            settings: model.settings
+        )
+        try await Self.waitUntil { engine.jobs.first?.status == .running }
+        #expect(!model.beginOrganizingCloud(accountID: account.id, bucketName: bucket.name))
+        #expect(model.banner?.text.contains("传输") == true)
+        engine.cancel(try #require(engine.jobs.first?.id))
+        try await Self.waitUntil { engine.jobs.first?.isActive == false }
+    }
+
+    @Test func quickLookRefusesOversizedObjectsWithoutDownloading() async {
+        let account = Self.account()
+        let bucket = Self.bucket()
+        let model = Self.model(account: account, bucket: bucket, transport: AccountTestTransport())
+        let object = OSSObject(
+            key: "huge.bin",
+            size: 81 * 1024 * 1024,
+            etag: "huge",
+            lastModified: nil,
+            storageClass: "Standard"
+        )
+
+        await model.quickLook(object)
+
+        #expect(model.banner?.isError == true)
+        #expect(model.banner?.text.contains("太大") == true)
+        #expect(model.previewItem == nil)
     }
 
     @Test func incompleteFolderListingNeverEnqueuesDownloads() async {
@@ -1107,6 +1275,31 @@ struct AppModelTests {
         model.selectedBucketName = bucket.name
         return model
     }
+
+    private static func windowModel(
+        account: OSSAccount,
+        bucket: OSSBucket,
+        services: AppServices
+    ) -> AppModel {
+        let model = AppModel(kind: .window, services: services) { _, _ in
+            OSSClient(
+                credentials: OSSCredentials(
+                    accessKeyId: "test",
+                    accessKeySecret: "secret",
+                    securityToken: nil
+                ),
+                region: bucket.regionID,
+                endpointHost: bucket.extranetEndpoint,
+                bucket: bucket.name,
+                transport: AccountTestTransport(),
+                testingVersioningStatusOverride: .disabled
+            )
+        }
+        model.selectedAccountID = account.id
+        model.buckets = [bucket]
+        model.selectedBucketName = bucket.name
+        return model
+    }
 }
 
 private enum UploadIdentityMutation: CaseIterable, Sendable {
@@ -1157,6 +1350,39 @@ private actor UploadIdentityDriftTransport: OSSHTTPTransport {
         if request.httpMethod == "PUT" {
             putCount += 1
         }
+        return OSSHTTPResult(
+            status: 200,
+            headers: [:],
+            data: Data(),
+            temporaryDownloadURL: nil
+        )
+    }
+}
+
+private actor OrganizeLockUploadTransport: OSSHTTPTransport {
+    func send(
+        _ request: URLRequest,
+        body: OSSHTTPBody,
+        download: Bool,
+        onProgress: (@Sendable (Int64, Int64) -> Void)?
+    ) async throws -> OSSHTTPResult {
+        if request.url?.query?.contains("versioning") == true {
+            return OSSHTTPResult(
+                status: 200,
+                headers: [:],
+                data: Data("<VersioningConfiguration/>".utf8),
+                temporaryDownloadURL: nil
+            )
+        }
+        if request.httpMethod == "HEAD" {
+            return OSSHTTPResult(
+                status: 404,
+                headers: [:],
+                data: Data("<Error><Code>NoSuchKey</Code></Error>".utf8),
+                temporaryDownloadURL: nil
+            )
+        }
+        try await Task.sleep(for: .seconds(30))
         return OSSHTTPResult(
             status: 200,
             headers: [:],

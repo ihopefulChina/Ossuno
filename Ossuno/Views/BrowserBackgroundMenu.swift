@@ -754,7 +754,7 @@ extension BrowserContextActions {
             canPaste: { model.canPaste },
             hasCloudClipboard: { model.canPasteCloudItems },
             canDeselect: !model.actionableSelectionKeys.isEmpty,
-            isOrganizing: model.isOrganizingCloud,
+            isOrganizing: model.isSelectedBucketOrganizing,
             tableItemIDs: isSearch
                 ? model.searchController.results.map(\.key)
                 : model.browser.orderedVisibleKeys,
