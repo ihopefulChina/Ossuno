@@ -186,11 +186,8 @@ enum FinderExportCoordinator {
             }
             return nil
         }
-        let type = payload.objectKeys.count == 1 && payload.folderPrefixes.isEmpty
-            ? (UTType(filenameExtension: (payload.objectKeys[0] as NSString).pathExtension) ?? .data)
-            : .folder
         provider.registerFileRepresentation(
-            forTypeIdentifier: type.identifier,
+            forTypeIdentifier: promisedFileType(for: payload).identifier,
             fileOptions: [],
             visibility: .all
         ) { completion in
@@ -310,6 +307,21 @@ enum FinderExportCoordinator {
             else { continue }
             try? FileManager.default.removeItem(at: url)
         }
+    }
+
+    /// Finder will not accept `public.text` (JSON, plain text, source, XML,
+    /// SVG) as a file drop — it tries to make a clipping or refuses. Promise
+    /// those keys as generic data so the original filename still lands.
+    static func promisedFileType(for payload: CloudDragPayload) -> UTType {
+        guard payload.objectKeys.count == 1, payload.folderPrefixes.isEmpty else {
+            return .folder
+        }
+        let ext = (payload.objectKeys[0] as NSString).pathExtension
+        guard let specific = UTType(filenameExtension: ext) else { return .data }
+        if specific.conforms(to: .text) {
+            return .data
+        }
+        return specific
     }
 
     private static func suggestedName(for payload: CloudDragPayload) -> String {

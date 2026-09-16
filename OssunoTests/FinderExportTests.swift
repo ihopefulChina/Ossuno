@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import UniformTypeIdentifiers
 @testable import Ossuno
 
 struct FinderExportTests {
@@ -77,6 +78,16 @@ struct FinderExportTests {
                 folderListings: ["safe/": [Self.object("safe/../secret.txt")]]
             )
         }
+    }
+
+    @Test func textLikeFilesPromiseGenericDataForFinder() {
+        #expect(FinderExportCoordinator.promisedFileType(for: Self.payload(objects: ["data.json"])) == .data)
+        #expect(FinderExportCoordinator.promisedFileType(for: Self.payload(objects: ["notes.txt"])) == .data)
+        #expect(FinderExportCoordinator.promisedFileType(for: Self.payload(objects: ["main.swift"])) == .data)
+        #expect(FinderExportCoordinator.promisedFileType(for: Self.payload(objects: ["mark.svg"])) == .data)
+        #expect(FinderExportCoordinator.promisedFileType(for: Self.payload(objects: ["hero.png"])).conforms(to: .image))
+        #expect(FinderExportCoordinator.promisedFileType(for: Self.payload(objects: ["clip.mp4"])).conforms(to: .audiovisualContent))
+        #expect(FinderExportCoordinator.promisedFileType(for: Self.payload(folders: ["Assets/"])) == .folder)
     }
 
     @Test func cachePruningRemovesOnlyStaleOwnedExports() throws {

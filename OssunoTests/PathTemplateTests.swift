@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 @testable import Ossuno
@@ -198,16 +199,51 @@ struct ImageProcessTests {
     }
 
     @Test func webpPreviewFallsBackToJPEGProcess() {
-        let queries = OSSImageProcess.grid.queries(for: "cover.webp")
-        #expect(queries.contains(where: { $0.contains("format,jpg") }))
+        let grid = OSSImageProcess.grid.queries(for: "cover.webp")
+        let row = OSSImageProcess.row.queries(for: "cover.webp")
+        #expect(grid.first?.contains("format,jpg") == true)
+        #expect(row.first?.contains("format,jpg") == true)
+        #expect(grid.contains(where: { $0.contains("format,jpg") && !$0.contains("limit_1") }))
         #expect(ImageKind.needsJPEGPreview(key: "cover.webp"))
         #expect(!ImageKind.needsJPEGPreview(key: "hero.png"))
+        #expect(!ImageKind.imgProcessable(key: "mark.svg"))
+        #expect(ImageKind.isImage(key: "mark.svg"))
     }
 
     @Test func inspectorOnlyResizes() {
         #expect(OSSImageProcess.inspector.query.contains("resize,m_lfit"))
         #expect(!OSSImageProcess.inspector.query.contains("crop"))
         #expect(!OSSImageProcess.inspector.query.contains("format,jpg"))
+    }
+}
+
+struct ImagePreviewDecoderTests {
+    @Test func rejectsOSSXMLErrorBodies() {
+        let xml = Data("<Error><Code>InvalidArgument</Code><Message>bad</Message></Error>".utf8)
+        #expect(!ImagePreviewDecoder.isDecodableImage(xml))
+        #expect(ImagePreviewDecoder.decode(xml, maxPixel: 64) == nil)
+    }
+
+    @Test func rasterizesSVG() {
+        let svg = Data(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">
+              <rect width="32" height="32" fill="#c45c26"/>
+            </svg>
+            """.utf8
+        )
+        #expect(ImagePreviewDecoder.looksLikeSVG(svg))
+        let image = ImagePreviewDecoder.decode(svg, maxPixel: 64)
+        #expect(image != nil)
+        #expect(image?.size.width == 64)
+        #expect(image?.size.height == 64)
+    }
+
+    @Test func recognizesWebPSignature() {
+        var data = Data([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50])
+        data.append(contentsOf: [0, 0, 0, 0])
+        #expect(ImagePreviewDecoder.isDecodableImage(data))
+        #expect(!ImagePreviewDecoder.looksLikeSVG(data))
     }
 }
 

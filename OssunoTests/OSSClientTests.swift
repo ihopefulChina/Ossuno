@@ -1849,6 +1849,108 @@ struct OSSClientTests {
         #expect(request.value(forHTTPHeaderField: "x-oss-meta-origin") == "updated")
     }
 
+    @Test func resumableDownloadWithoutCRC64StillPublishes() async throws {
+        let directory = try Self.temporaryDirectory(named: "range-missing-crc")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let destination = directory.appending(path: "notes.txt")
+        let bytes = Data("membership".utf8)
+        let transport = StubOSSTransport(steps: [
+            .response(
+                status: 200,
+                headers: [
+                    "Content-Length": "\(bytes.count)",
+                    "ETag": "v1"
+                ],
+                data: Data()
+            ),
+            .response(
+                status: 206,
+                headers: [
+                    "Content-Range": "bytes 0-\(bytes.count - 1)/\(bytes.count)",
+                    "ETag": "v1"
+                ],
+                data: bytes
+            )
+        ])
+
+        let verified = try await Self.client(transport: transport).downloadResumable(
+            key: "notes.txt",
+            to: destination,
+            within: directory,
+            expectedSize: Int64(bytes.count)
+        )
+
+        #expect(verified == false)
+        #expect(try Data(contentsOf: destination) == bytes)
+    }
+
+    @Test func resumableDownloadWithoutETagFallsBackToWholeObject() async throws {
+        let directory = try Self.temporaryDirectory(named: "whole-missing-etag")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let destination = directory.appending(path: "membership.text")
+        let temporary = directory.appending(path: "response.tmp")
+        let payload = Data("plain membership".utf8)
+        try payload.write(to: temporary)
+        let transport = StubOSSTransport(steps: [
+            .response(
+                status: 200,
+                headers: ["Content-Length": "\(payload.count)"],
+                data: Data()
+            ),
+            .download(temporary, headers: [:])
+        ])
+
+        let verified = try await Self.client(transport: transport).downloadResumable(
+            key: "membership.text",
+            to: destination,
+            within: directory,
+            expectedSize: Int64(payload.count)
+        )
+
+        #expect(verified == false)
+        #expect(try Data(contentsOf: destination) == payload)
+        let requests = await transport.recordedRequests()
+        #expect(requests.map(\.httpMethod) == ["HEAD", "GET"])
+        #expect(requests.last?.value(forHTTPHeaderField: "Range") == nil)
+    }
+
+    @Test func resumableDownloadReplacesAnEmptyLeftoverWithoutOverwriteApproval() async throws {
+        let directory = try Self.temporaryDirectory(named: "empty-leftover")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let destination = directory.appending(path: "membership.text")
+        try Data().write(to: destination)
+        let bytes = Data("membership".utf8)
+        let checksum = CRC64XZ.checksum(bytes)
+        let transport = StubOSSTransport(steps: [
+            .response(
+                status: 200,
+                headers: [
+                    "Content-Length": "\(bytes.count)",
+                    "ETag": "v1",
+                    "x-oss-hash-crc64ecma": String(checksum)
+                ],
+                data: Data()
+            ),
+            .response(
+                status: 206,
+                headers: [
+                    "Content-Range": "bytes 0-\(bytes.count - 1)/\(bytes.count)",
+                    "ETag": "v1"
+                ],
+                data: bytes
+            )
+        ])
+
+        _ = try await Self.client(transport: transport).downloadResumable(
+            key: "membership.text",
+            to: destination,
+            within: directory,
+            expectedSize: Int64(bytes.count)
+        )
+
+        #expect(try Data(contentsOf: destination) == bytes)
+    }
+
     @Test func downloadWithoutServerCRCStillPublishesTheDestination() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "ossuno-missing-crc-\(UUID().uuidString)", directoryHint: .isDirectory)

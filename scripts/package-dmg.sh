@@ -88,6 +88,26 @@ unregister_from_launch_services() {
     "$lsregister" -u "$app_path" >/dev/null 2>&1 || true
 }
 
+thin_macho_tree() {
+    local root="$1"
+    local expected_architecture="$2"
+    local candidate description slices tmp
+
+    while IFS= read -r -d $'\0' candidate; do
+        description="$(file -b "$candidate")"
+        [[ "$description" == Mach-O* ]] || continue
+        slices="$(lipo -archs "$candidate" 2>/dev/null)" \
+            || fail "unable to inspect Mach-O architectures: $candidate"
+        [[ "$slices" == "$expected_architecture" ]] && continue
+        print -r -- " $slices " | grep -Fq " $expected_architecture " \
+            || fail "expected $expected_architecture in $candidate, found: $slices"
+        tmp="$candidate.thinning"
+        lipo "$candidate" -thin "$expected_architecture" -output "$tmp" \
+            || fail "unable to thin $candidate to $expected_architecture"
+        mv "$tmp" "$candidate"
+    done < <(find "$root" -type f -print0)
+}
+
 assert_thin_macho_tree() {
     local root="$1"
     local expected_architecture="$2"
@@ -210,11 +230,12 @@ build_architecture() {
     [[ "$actual_bundle_identifier" == "$expected_bundle_identifier" ]] \
         || fail "$architecture app bundle identifier is $actual_bundle_identifier, expected $expected_bundle_identifier"
 
-    # Sparkle is delivered as a universal binary artifact. ditto --arch keeps
-    # the requested CodeDirectory slice while removing every other slice from
-    # the app and all nested helpers/frameworks.
+    # Sparkle is a universal artifact. ditto --arch used to drop the other
+    # slice, but current macOS copies the fat binaries intact, so lipo thins
+    # remaining Mach-O files before the architecture assertion.
     mkdir -p "${packaged_app_path:h}"
     ditto --arch "$architecture" "$built_app_path" "$packaged_app_path"
+    thin_macho_tree "$packaged_app_path" "$architecture"
     assert_thin_macho_tree "$packaged_app_path" "$architecture"
 
     if [[ "$mode" == "development" || "$mode" == "adhoc" || "$mode" == "adhoc-release" ]]; then

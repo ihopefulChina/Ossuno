@@ -1212,6 +1212,39 @@ struct TransferEngineTests {
         #expect(paths == Array(repeating: "/remote/download.txt", count: 4))
     }
 
+    @Test func failedDownloadRetryReplacesALeftoverDestination() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "ossuno-download-retry-leftover-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let destination = directory.appending(path: "membership.text")
+        let downloadedTemporary = directory.appending(path: "remote.tmp")
+        try Data("membership-body".utf8).write(to: downloadedTemporary)
+        let transport = RetryTransport(downloadURL: downloadedTemporary)
+        let client = Self.client(transport: transport)
+        let engine = TransferEngine()
+        let object = OSSObject(
+            key: "remote/membership.text",
+            size: 15,
+            etag: "stable-etag",
+            lastModified: nil,
+            storageClass: "Standard"
+        )
+
+        engine.enqueueDownloadJobs(
+            items: [(object, destination)],
+            client: client,
+            scopedRoot: directory
+        )
+        try await Self.waitUntil { engine.jobs.first?.status == .failed }
+        try Data().write(to: destination)
+        let failedID = try #require(engine.jobs.first?.id)
+        engine.retry(failedID)
+        try await Self.waitUntil { engine.jobs.count == 2 && engine.jobs.last?.status == .completed }
+
+        #expect(try Data(contentsOf: destination) == Data("membership-body".utf8))
+    }
+
     @Test func unapprovedDownloadDestinationAppearingAfterPlanningIsPreserved() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "ossuno-download-scope-\(UUID().uuidString)", directoryHint: .isDirectory)

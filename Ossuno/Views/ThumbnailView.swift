@@ -1,5 +1,4 @@
 import AppKit
-import ImageIO
 import SwiftUI
 
 struct ThumbnailView: View {
@@ -21,13 +20,13 @@ struct ThumbnailView: View {
                     if let image {
                         Image(nsImage: image)
                             .resizable()
-                            .interpolation(.medium)
+                            .interpolation(.high)
                             .scaledToFill()
-                    } else if failed || !ImageKind.imgProcessable(key: object.key) {
-                        Image(systemName: "photo")
-                            .font(.system(size: style == .row ? 11 : 22, weight: .light))
-                            .foregroundStyle(.secondary)
-                    } else if style != .row {
+                    } else if failed {
+                        FinderFileIcon(key: object.key, size: style == .row ? 16 : 48)
+                    } else if style == .row {
+                        FinderFileIcon(key: object.key, size: 16)
+                    } else {
                         ProgressView()
                             .controlSize(.small)
                     }
@@ -38,12 +37,14 @@ struct ThumbnailView: View {
             .clipped()
             .contentShape(Rectangle())
             .task(id: object.etag + object.key + style.cacheKey) {
+                image = nil
+                failed = false
                 await load()
             }
     }
 
     private func load() async {
-        guard object.isImage, ImageKind.imgProcessable(key: object.key) else { return }
+        guard object.isImage else { return }
         guard let client = loadClient() else {
             failed = true
             return
@@ -59,6 +60,7 @@ struct ThumbnailView: View {
 @MainActor
 final class ThumbnailCache {
     static let shared = ThumbnailCache()
+    private static let originalPreviewBytes = 4_000_000
 
     private var memory: [String: NSImage] = [:]
     private var inflight: Set<String> = []
@@ -78,17 +80,18 @@ final class ThumbnailCache {
         defer { inflight.remove(token) }
 
         let key = object.key
-        let queries = style.queries(for: key)
+        let queries = ImageKind.imgProcessable(key: key) ? style.queries(for: key) : []
         let maxPixel = style.maxPixel
-        let allowOriginal = object.size < 256_000
+        let allowOriginal = !ImageKind.imgProcessable(key: key)
+            || object.size <= Int64(Self.originalPreviewBytes)
         await waitForSlot()
         defer { finishSlot() }
 
         var loadedImage: NSImage?
         for process in queries {
             if let data = try? await client.objectData(key: key, process: process),
-               data.count < 1_500_000,
-               let image = Self.decode(data, maxPixel: maxPixel) {
+               data.count <= Self.originalPreviewBytes,
+               let image = ImagePreviewDecoder.decode(data, maxPixel: maxPixel) {
                 loadedImage = image
                 break
             }
@@ -96,8 +99,8 @@ final class ThumbnailCache {
         if loadedImage == nil,
            allowOriginal,
            let data = try? await client.objectData(key: key),
-           data.count < 1_500_000 {
-            loadedImage = Self.decode(data, maxPixel: maxPixel)
+           data.count <= Self.originalPreviewBytes {
+            loadedImage = ImagePreviewDecoder.decode(data, maxPixel: maxPixel)
         }
 
         if let loadedImage {
@@ -107,25 +110,6 @@ final class ThumbnailCache {
             memory[token] = loadedImage
         }
         return loadedImage
-    }
-
-    private static func decode(_ data: Data, maxPixel: CGFloat) -> NSImage? {
-        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
-        if let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) {
-            let options: [CFString: Any] = [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: maxPixel,
-                kCGImageSourceShouldCacheImmediately: true
-            ]
-            if let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
-                return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-            }
-        }
-        if let image = NSImage(data: data), image.size.width > 0, image.size.height > 0 {
-            return image
-        }
-        return nil
     }
 
     private func waitForSlot() async {

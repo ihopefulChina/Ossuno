@@ -25,14 +25,16 @@ enum OSSImageProcess {
     }
 
     func queries(for key: String) -> [String] {
-        var items = [query]
+        // WebP / HEIC / GIF 处理后 ImageIO 经常解不开。先向 IMG 要 JPEG，
+        // 列表单元格复用窗口短，少一次失败重试更容易出图。
         if ImageKind.needsJPEGPreview(key: key) {
-            items.append(query + "/format,jpg")
-            items.append("image/resize,m_lfit,w_160,h_160,limit_1/format,jpg")
-        } else {
-            items.append("image/resize,m_lfit,w_160,limit_1")
+            return [
+                query + "/format,jpg",
+                "image/resize,m_lfit,w_160,h_160/format,jpg",
+                query
+            ]
         }
-        return items
+        return [query, "image/resize,m_lfit,w_160,limit_1"]
     }
 
     var maxPixel: CGFloat {

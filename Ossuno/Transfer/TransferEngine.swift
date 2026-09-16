@@ -502,6 +502,11 @@ final class TransferEngine {
             var overwriteDestinations: [URL: LocalFileIdentity] = [:]
             if let identity = download.overwriteIdentity {
                 overwriteDestinations[download.destination.standardizedFileURL] = identity
+            } else if FileManager.default.fileExists(atPath: download.destination.path),
+                      let identity = try? LocalFileIdentity.capture(download.destination) {
+                // A failed attempt can leave an empty or partial file at the
+                // planned path. Retry means the user wants that download.
+                overwriteDestinations[download.destination.standardizedFileURL] = identity
             }
             enqueueDownloadJobs(
                 items: [(download.object, download.destination)],

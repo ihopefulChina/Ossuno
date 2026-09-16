@@ -282,7 +282,7 @@ struct OSSClient: Sendable {
             etag: Self.normalizedETag(headers.value("ETag")),
             acl: headers.value("x-oss-object-acl"),
             storageClass: headers.value("x-oss-storage-class"),
-            crc64: headers.value("x-oss-hash-crc64ecma").flatMap(UInt64.init),
+            crc64: Self.parseCRC64(headers.value("x-oss-hash-crc64ecma")),
             cacheControl: headers.value("Cache-Control"),
             contentDisposition: headers.value("Content-Disposition"),
             contentEncoding: headers.value("Content-Encoding"),
@@ -1295,7 +1295,16 @@ struct OSSClient: Sendable {
         guard let bucket else { throw Self.missingBucket }
         try FileSafety.validate(destination: destination, root: root)
         let destinationExists = FileManager.default.fileExists(atPath: destination.path)
-        if destinationExists, !overwrite {
+        var allowOverwrite = overwrite
+        if destinationExists, !allowOverwrite {
+            let size = (try? FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? NSNumber)?.int64Value
+            // A previous failed attempt can leave a 0-byte placeholder. That
+            // is not user data; replace it instead of stalling the download.
+            if size == 0 {
+                allowOverwrite = true
+            }
+        }
+        if destinationExists, !allowOverwrite {
             throw OSSServiceError(
                 statusCode: 0,
                 code: "LocalFileExists",
@@ -1305,17 +1314,10 @@ struct OSSClient: Sendable {
         }
         let remote = try await head(key: key)
         let total = remote.contentLength ?? expectedSize
-        guard let remoteETag = remote.etag, !remoteETag.isEmpty,
-              let remoteCRC64 = remote.crc64
-        else {
-            throw OSSServiceError(
-                statusCode: 0,
-                code: "MissingRemoteIdentity",
-                message: "OSS 未返回 ETag/CRC64，无法安全执行分片下载",
-                requestId: ""
-            )
-        }
-        if let expectedETag, !Self.matchesETag(remoteETag, expected: expectedETag) {
+        let remoteETag = remote.etag.flatMap { $0.isEmpty ? nil : $0 }
+        let remoteCRC64 = remote.crc64
+        if let expectedETag, !expectedETag.isEmpty, let remoteETag,
+           !Self.matchesETag(remoteETag, expected: expectedETag) {
             throw Self.remoteObjectChanged
         }
         if let expectedVersionID,
@@ -1335,6 +1337,16 @@ struct OSSClient: Sendable {
             at: destination.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
+        guard let remoteETag else {
+            return try await downloadWholeObject(
+                key: key,
+                to: destination,
+                within: root,
+                overwrite: allowOverwrite,
+                beforeReplacingExisting: beforeReplacingExisting,
+                onProgress: onProgress
+            )
+        }
         let transferChunkSize = Self.transferChunkSize(
             totalBytes: total,
             defaultSize: Self.downloadChunkSize,
@@ -1351,7 +1363,7 @@ struct OSSClient: Sendable {
            suppliedCheckpoint.bucketName == bucket,
            suppliedCheckpoint.objectKey == key,
            suppliedCheckpoint.expectedSize == total,
-           suppliedCheckpoint.etag == remote.etag,
+           suppliedCheckpoint.etag == remoteETag,
            suppliedCheckpoint.chunkSize == transferChunkSize,
            suppliedCheckpoint.completedBytes >= 0,
            suppliedCheckpoint.completedBytes <= total,
@@ -1372,7 +1384,7 @@ struct OSSClient: Sendable {
                 bucketName: bucket,
                 objectKey: key,
                 expectedSize: total,
-                etag: remote.etag,
+                etag: remoteETag,
                 chunkSize: transferChunkSize,
                 completedBytes: 0,
                 partialFileName: ".ossuno-\(UUID().uuidString).partial"
@@ -1441,13 +1453,15 @@ struct OSSClient: Sendable {
         }
         try handle.close()
 
-        let local = try CRC64XZ.checksum(fileURL: partial)
-        guard local == remoteCRC64 else {
-            throw OSSIntegrityError(localCRC64: local, serverValue: String(remoteCRC64))
+        if let remoteCRC64 {
+            let local = try CRC64XZ.checksum(fileURL: partial)
+            guard local == remoteCRC64 else {
+                throw OSSIntegrityError(localCRC64: local, serverValue: String(remoteCRC64))
+            }
         }
         try FileSafety.validate(destination: destination, root: root)
         if FileManager.default.fileExists(atPath: destination.path) {
-            guard overwrite else {
+            guard allowOverwrite else {
                 throw OSSServiceError(statusCode: 0, code: "LocalFileExists", message: "本地已有同名文件，未覆盖", requestId: "")
             }
             try beforeReplacingExisting?()
@@ -1456,7 +1470,55 @@ struct OSSClient: Sendable {
             try FileManager.default.moveItem(at: partial, to: destination)
         }
         onCheckpoint?(nil)
-        return true
+        return remoteCRC64 != nil
+    }
+
+    /// Compatible endpoints, CDN frontends, and some text/json objects omit
+    /// CRC64 or return a weak ETag that we refuse to pin. Range downloads need
+    /// a strong ETag; fall back to a single GET so those keys still land.
+    private func downloadWholeObject(
+        key: String,
+        to destination: URL,
+        within root: URL,
+        overwrite: Bool,
+        beforeReplacingExisting: (@Sendable () throws -> Void)?,
+        onProgress: (@Sendable (Int64, Int64) -> Void)?
+    ) async throws -> Bool {
+        let temporary = try FileSafety.destination(
+            root: root,
+            relativePath: ".ossuno-\(UUID().uuidString).partial"
+        )
+        if FileManager.default.fileExists(atPath: temporary.path) {
+            try FileManager.default.removeItem(at: temporary)
+        }
+        do {
+            let verified = try await download(
+                key: key,
+                to: temporary,
+                within: root,
+                onProgress: onProgress
+            )
+            try FileSafety.validate(destination: destination, root: root)
+            if FileManager.default.fileExists(atPath: destination.path) {
+                guard overwrite else {
+                    try? FileManager.default.removeItem(at: temporary)
+                    throw OSSServiceError(
+                        statusCode: 0,
+                        code: "LocalFileExists",
+                        message: "本地已有同名文件，未覆盖",
+                        requestId: ""
+                    )
+                }
+                try beforeReplacingExisting?()
+                _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
+            } else {
+                try FileManager.default.moveItem(at: temporary, to: destination)
+            }
+            return verified
+        } catch {
+            try? FileManager.default.removeItem(at: temporary)
+            throw error
+        }
     }
 
     func removePartialDownload(
@@ -2050,6 +2112,16 @@ struct OSSClient: Sendable {
                 attempt += 1
             }
         }
+    }
+
+    private static func parseCRC64(_ value: String?) -> UInt64? {
+        guard var trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty
+        else { return nil }
+        if trimmed.count >= 2, trimmed.first == "\"", trimmed.last == "\"" {
+            trimmed = String(trimmed.dropFirst().dropLast())
+        }
+        return UInt64(trimmed)
     }
 
     private static func verifyCRC64(
