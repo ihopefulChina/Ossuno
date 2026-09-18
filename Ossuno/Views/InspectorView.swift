@@ -134,7 +134,12 @@ struct InspectorView: View {
                     .padding(8)
                     .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 } else {
-                    ThumbnailView(object: object, style: .inspector, loadClient: { model.makeClient() })
+                    ThumbnailView(
+                        object: object,
+                        style: .inspector,
+                        loadClient: { model.makeClient() },
+                        scope: model.thumbnailScope
+                    )
                         .frame(height: object.isImage ? 168 : 96)
                         .frame(maxWidth: .infinity)
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))

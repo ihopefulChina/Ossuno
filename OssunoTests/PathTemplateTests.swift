@@ -46,6 +46,13 @@ struct PathTemplateTests {
                 filePath: "/tmp/drop/avatars/hero.png"
             ) == "avatars/hero.png"
         )
+        #expect(
+            PathTemplate.nestedRelative(
+                rootName: "avatars",
+                rootPath: "/tmp/drop/avatars",
+                filePath: "/tmp/drop/avatars-old/hero.png"
+            ) == "avatars/hero.png"
+        )
     }
 
     @Test func replacingLastComponentKeepsParents() {
@@ -244,6 +251,13 @@ struct ImagePreviewDecoderTests {
         data.append(contentsOf: [0, 0, 0, 0])
         #expect(ImagePreviewDecoder.isDecodableImage(data))
         #expect(!ImagePreviewDecoder.looksLikeSVG(data))
+    }
+
+    @Test func recognizesHEICBrand() {
+        var data = Data(repeating: 0, count: 16)
+        data.replaceSubrange(4..<8, with: Array("ftyp".utf8))
+        data.replaceSubrange(8..<12, with: Array("heic".utf8))
+        #expect(ImagePreviewDecoder.isDecodableImage(data))
     }
 }
 

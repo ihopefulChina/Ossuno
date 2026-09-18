@@ -9,6 +9,9 @@ struct ThumbnailView: View {
     /// reliably available, so the model is never read from the environment
     /// here.
     var loadClient: () -> OSSClient?
+    /// Distinguishes the same object key across accounts or buckets so a
+    /// cached preview cannot leak into another workspace.
+    var scope: String = ""
     @State private var image: NSImage?
     @State private var failed = false
 
@@ -36,7 +39,7 @@ struct ThumbnailView: View {
             }
             .clipped()
             .contentShape(Rectangle())
-            .task(id: object.etag + object.key + style.cacheKey) {
+            .task(id: scope + object.etag + object.key + style.cacheKey) {
                 image = nil
                 failed = false
                 await load()
@@ -49,77 +52,15 @@ struct ThumbnailView: View {
             failed = true
             return
         }
-        if let nsImage = await ThumbnailCache.shared.load(object: object, style: style, client: client) {
+        if let nsImage = await ThumbnailCache.shared.load(
+            object: object,
+            style: style,
+            scope: scope,
+            client: client
+        ) {
             image = nsImage
         } else {
             failed = true
         }
-    }
-}
-
-@MainActor
-final class ThumbnailCache {
-    static let shared = ThumbnailCache()
-    private static let originalPreviewBytes = 4_000_000
-
-    private var memory: [String: NSImage] = [:]
-    private var inflight: Set<String> = []
-    private var running = 0
-    private let limit = 6
-
-    func load(object: OSSObject, style: OSSImageProcess, client: OSSClient) async -> NSImage? {
-        let token = style.cacheKey + object.key + object.etag
-        if let cached = memory[token] { return cached }
-        if inflight.contains(token) {
-            while inflight.contains(token) {
-                try? await Task.sleep(for: .milliseconds(40))
-            }
-            return memory[token]
-        }
-        inflight.insert(token)
-        defer { inflight.remove(token) }
-
-        let key = object.key
-        let queries = ImageKind.imgProcessable(key: key) ? style.queries(for: key) : []
-        let maxPixel = style.maxPixel
-        let allowOriginal = !ImageKind.imgProcessable(key: key)
-            || object.size <= Int64(Self.originalPreviewBytes)
-        await waitForSlot()
-        defer { finishSlot() }
-
-        var loadedImage: NSImage?
-        for process in queries {
-            if let data = try? await client.objectData(key: key, process: process),
-               data.count <= Self.originalPreviewBytes,
-               let image = ImagePreviewDecoder.decode(data, maxPixel: maxPixel) {
-                loadedImage = image
-                break
-            }
-        }
-        if loadedImage == nil,
-           allowOriginal,
-           let data = try? await client.objectData(key: key),
-           data.count <= Self.originalPreviewBytes {
-            loadedImage = ImagePreviewDecoder.decode(data, maxPixel: maxPixel)
-        }
-
-        if let loadedImage {
-            if memory.count > 280 {
-                memory.removeAll(keepingCapacity: true)
-            }
-            memory[token] = loadedImage
-        }
-        return loadedImage
-    }
-
-    private func waitForSlot() async {
-        while running >= limit {
-            try? await Task.sleep(for: .milliseconds(40))
-        }
-        running += 1
-    }
-
-    private func finishSlot() {
-        running = max(0, running - 1)
     }
 }

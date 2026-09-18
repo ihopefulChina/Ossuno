@@ -673,6 +673,15 @@ struct AppModelTests {
         #expect(model.downloadRelativePath(for: first, preserveKeyPath: true) == "a/hero.png")
         #expect(model.downloadRelativePath(for: second, preserveKeyPath: true) == "b/hero.png")
         #expect(model.downloadRelativePath(for: first, preserveKeyPath: false) == "hero.png")
+        let colon = OSSObject(
+            key: "dir/file:name.png",
+            size: 1,
+            etag: "c",
+            lastModified: nil,
+            storageClass: "Standard"
+        )
+        #expect(model.downloadRelativePath(for: colon, preserveKeyPath: false) == "file-name.png")
+        #expect(model.downloadRelativePath(for: colon, preserveKeyPath: true) == "dir/file-name.png")
 
         let dest = FileManager.default.temporaryDirectory
             .appending(path: "ossuno-search-download-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -1110,12 +1119,27 @@ struct AppModelTests {
         let bucket = Self.bucket()
         let transport = ConflictProbeTransport()
         let model = Self.model(account: account, bucket: bucket, transport: transport)
-        let keys = (1...41).map { "file-\($0).txt" }
+        let keys = (1...101).map { "folder/file-\($0).txt" }
+
+        let found = try await model.existingKeys(among: keys, client: model.makeClient()!)
+
+        #expect(found == ["folder/file-1.txt"])
+        #expect(await transport.headCount == 101)
+        #expect(await transport.listCount == 1)
+    }
+
+    @Test func existingKeysPrefersHeadForModestBatches() async throws {
+        let account = Self.account()
+        let bucket = Self.bucket()
+        let transport = ConflictProbeTransport()
+        let model = Self.model(account: account, bucket: bucket, transport: transport)
+        let keys = (1...50).map { "file-\($0).txt" }
 
         let found = try await model.existingKeys(among: keys, client: model.makeClient()!)
 
         #expect(found == ["file-1.txt"])
-        #expect(await transport.headCount == 41)
+        #expect(await transport.headCount == 50)
+        #expect(await transport.listCount == 0)
     }
 
     @Test func uploadOverwriteApprovalIsBoundToTheExactRemoteIdentity() async throws {
@@ -1156,6 +1180,46 @@ struct AppModelTests {
             #expect(await transport.putCount == 0)
             #expect(await transport.currentIdentity == changedIdentity)
         }
+    }
+
+    @Test func laterUploadWaitsForTheOverwritePrompt() async throws {
+        let first = FileManager.default.temporaryDirectory
+            .appending(path: "\(UUID().uuidString)-conflict.txt")
+        let second = FileManager.default.temporaryDirectory
+            .appending(path: "\(UUID().uuidString)-fresh.txt")
+        try Data("first".utf8).write(to: first)
+        try Data("second".utf8).write(to: second)
+        defer {
+            try? FileManager.default.removeItem(at: first)
+            try? FileManager.default.removeItem(at: second)
+        }
+
+        let account = Self.account()
+        let bucket = Self.bucket()
+        let transport = QueuedUploadTransport(existingLeaf: first.lastPathComponent)
+        let model = Self.model(
+            account: account,
+            bucket: bucket,
+            transport: transport,
+            versioningStatus: .enabled
+        )
+        model.settings.transferConflictPolicy = .ask
+
+        model.upload(urls: [first], to: "", applyTemplate: false)
+        try await Self.waitUntil { model.overwritePrompt != nil }
+
+        model.upload(urls: [second], to: "", applyTemplate: false)
+        try await Task.sleep(for: .milliseconds(80))
+        #expect(model.overwritePrompt != nil)
+        #expect(model.transfers.jobs.isEmpty)
+
+        model.confirmOverwrite()
+        try await Self.waitUntil {
+            model.overwritePrompt == nil
+                && model.transfers.jobs.count == 2
+                && model.transfers.jobs.allSatisfy { !$0.isActive }
+        }
+        #expect(await transport.putKeys.sorted() == [first.lastPathComponent, second.lastPathComponent].sorted())
     }
 
     @Test func unversionedBucketKeepsOverwriteDisabledButStillAllowsSkipping() async throws {
@@ -1308,6 +1372,53 @@ private enum UploadIdentityMutation: CaseIterable, Sendable {
     case size
 }
 
+private actor QueuedUploadTransport: OSSHTTPTransport {
+    let existingLeaf: String
+    private(set) var putKeys: [String] = []
+
+    init(existingLeaf: String) {
+        self.existingLeaf = existingLeaf
+    }
+
+    func send(
+        _ request: URLRequest,
+        body: OSSHTTPBody,
+        download: Bool,
+        onProgress: (@Sendable (Int64, Int64) -> Void)?
+    ) async throws -> OSSHTTPResult {
+        let leaf = request.url?.path.split(separator: "/").last.map(String.init) ?? ""
+        if request.httpMethod == "HEAD" {
+            if leaf == existingLeaf {
+                return OSSHTTPResult(
+                    status: 200,
+                    headers: [
+                        "Content-Length": "5",
+                        "ETag": "\"existing\"",
+                        "x-oss-version-id": "v1"
+                    ],
+                    data: Data(),
+                    temporaryDownloadURL: nil
+                )
+            }
+            return OSSHTTPResult(
+                status: 404,
+                headers: [:],
+                data: Data("<Error><Code>NoSuchKey</Code></Error>".utf8),
+                temporaryDownloadURL: nil
+            )
+        }
+        if request.httpMethod == "PUT" {
+            putKeys.append(leaf)
+        }
+        return OSSHTTPResult(
+            status: 200,
+            headers: ["ETag": "\"written\"", "x-oss-version-id": "v2"],
+            data: Data(),
+            temporaryDownloadURL: nil
+        )
+    }
+}
+
 private actor UploadIdentityDriftTransport: OSSHTTPTransport {
     static let initialIdentity = OSSObjectIdentity(
         etag: "approved-etag",
@@ -1435,6 +1546,7 @@ private actor TruncatedListTransport: OSSHTTPTransport {
 
 private actor ConflictProbeTransport: OSSHTTPTransport {
     private(set) var headCount = 0
+    private(set) var listCount = 0
 
     func send(
         _ request: URLRequest,
@@ -1443,6 +1555,7 @@ private actor ConflictProbeTransport: OSSHTTPTransport {
         onProgress: (@Sendable (Int64, Int64) -> Void)?
     ) async throws -> OSSHTTPResult {
         if request.httpMethod == "GET" {
+            listCount += 1
             let xml = """
             <ListBucketResult>
               <IsTruncated>true</IsTruncated>

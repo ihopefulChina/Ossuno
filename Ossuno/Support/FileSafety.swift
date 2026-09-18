@@ -45,6 +45,27 @@ enum FileSafety {
         return components
     }
 
+    /// Turns an OSS object name into a leaf name that APFS will accept.
+    /// Colons become hyphens so Quick Look and downloads do not trip over
+    /// Apple's legacy path separator.
+    static func sanitizedFileName(_ raw: String) -> String {
+        var name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        name = String(name.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) })
+        name = name.replacingOccurrences(of: ":", with: "-")
+        name = name.replacingOccurrences(of: "/", with: "-")
+        if name.isEmpty || name == "." || name == ".." {
+            return "未命名文件"
+        }
+        return name
+    }
+
+    static func sanitizedRelativePath(_ relativePath: String) -> String {
+        relativePath
+            .split(separator: "/", omittingEmptySubsequences: true)
+            .map { sanitizedFileName(String($0)) }
+            .joined(separator: "/")
+    }
+
     static func destination(root: URL, relativePath: String) throws -> URL {
         let components = try relativeComponents(relativePath)
         let resolvedRoot = root.standardizedFileURL.resolvingSymlinksInPath()

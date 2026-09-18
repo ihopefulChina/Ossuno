@@ -702,7 +702,10 @@ struct OSSClient: Sendable {
         replacingTags: [OSSObjectTag]? = nil,
         expectedDestination: OSSObjectIdentity? = nil,
         versioningStatus: OSSBucketVersioningStatus? = nil,
-        preflightDestination: Bool = true
+        preflightDestination: Bool = true,
+        sourceSize: Int64? = nil,
+        sourceMetadata: ObjectHead? = nil,
+        sourceTags: [OSSObjectTag] = []
     ) async throws -> String? {
         guard let bucket else { throw Self.missingBucket }
         return try await copyObject(
@@ -722,7 +725,10 @@ struct OSSClient: Sendable {
             replacingTags: replacingTags,
             expectedDestination: expectedDestination,
             versioningStatus: versioningStatus,
-            preflightDestination: preflightDestination
+            preflightDestination: preflightDestination,
+            sourceSize: sourceSize,
+            sourceMetadata: sourceMetadata,
+            sourceTags: sourceTags
         )
     }
 
@@ -745,7 +751,10 @@ struct OSSClient: Sendable {
         replacingMetadata headersToReplace: [String: String]? = nil,
         expectedDestination: OSSObjectIdentity? = nil,
         versioningStatus: OSSBucketVersioningStatus? = nil,
-        preflightDestination: Bool = true
+        preflightDestination: Bool = true,
+        sourceSize: Int64? = nil,
+        sourceMetadata: ObjectHead? = nil,
+        sourceTags: [OSSObjectTag] = []
     ) async throws -> String? {
         guard let bucket else { throw Self.missingBucket }
         guard overwrite || expectedDestination == nil else {
@@ -832,6 +841,28 @@ struct OSSClient: Sendable {
             // mutating COPY. OSS has no destination If-Match for CopyObject.
             try await requireDestinationIdentity(key: destKey, expected: expectedDestination)
         }
+        if let sourceSize, sourceSize > Self.maximumSingleCopyBytes {
+            return try await copyObjectMultipart(
+                sourceBucket: sourceBucket,
+                sourceKey: sourceKey,
+                destKey: destKey,
+                sourceSize: sourceSize,
+                overwrite: overwrite,
+                acl: acl,
+                sourceETag: sourceETag,
+                sourceVersionID: sourceVersionID,
+                storageClass: storageClass,
+                serverSideEncryption: serverSideEncryption,
+                serverSideEncryptionKeyID: serverSideEncryptionKeyID,
+                serverSideDataEncryption: serverSideDataEncryption,
+                replacingTags: replacingTags,
+                headersToReplace: headersToReplace,
+                sourceMetadata: sourceMetadata,
+                sourceTags: sourceTags,
+                requireCommittedVersionID: requireCommittedVersionID,
+                allowVersionedCreate: allowVersionedCreate
+            )
+        }
         do {
             let response = try await perform(
                 method: "PUT",
@@ -857,6 +888,181 @@ struct OSSClient: Sendable {
         }
     }
 
+    private func copyObjectMultipart(
+        sourceBucket: String,
+        sourceKey: String,
+        destKey: String,
+        sourceSize: Int64,
+        overwrite: Bool,
+        acl: ObjectACL,
+        sourceETag: String?,
+        sourceVersionID: String?,
+        storageClass: String?,
+        serverSideEncryption: String?,
+        serverSideEncryptionKeyID: String?,
+        serverSideDataEncryption: String?,
+        replacingTags: [OSSObjectTag]?,
+        headersToReplace: [String: String]?,
+        sourceMetadata: ObjectHead?,
+        sourceTags: [OSSObjectTag],
+        requireCommittedVersionID: Bool,
+        allowVersionedCreate: Bool
+    ) async throws -> String? {
+        guard let bucket else { throw Self.missingBucket }
+        guard sourceSize > 0 else { throw Self.copyObjectTooLarge(key: sourceKey) }
+        var source = "/" + OSSSigner.uriEncode(sourceBucket, encodeSlash: true)
+            + "/" + OSSSigner.uriEncode(sourceKey, encodeSlash: false)
+        if let sourceVersionID, !sourceVersionID.isEmpty {
+            source += "?versionId=" + OSSSigner.uriEncode(sourceVersionID, encodeSlash: true)
+        }
+        let properties: OSSObjectProperties?
+        let contentEncoding: String?
+        if let headersToReplace {
+            properties = OSSObjectProperties(
+                contentType: headersToReplace["Content-Type"] ?? sourceMetadata?.contentType ?? "",
+                cacheControl: headersToReplace["Cache-Control"] ?? "",
+                contentDisposition: headersToReplace["Content-Disposition"] ?? "",
+                contentLanguage: headersToReplace["Content-Language"] ?? "",
+                expires: headersToReplace["Expires"] ?? "",
+                userMetadata: {
+                    var metadata: [String: String] = [:]
+                    for (name, value) in headersToReplace {
+                        let lower = name.lowercased()
+                        guard lower.hasPrefix("x-oss-meta-") else { continue }
+                        metadata[String(lower.dropFirst("x-oss-meta-".count))] = value
+                    }
+                    return metadata
+                }()
+            )
+            contentEncoding = headersToReplace["Content-Encoding"]
+        } else if let sourceMetadata {
+            properties = OSSObjectProperties(
+                contentType: sourceMetadata.contentType ?? "",
+                cacheControl: sourceMetadata.cacheControl ?? "",
+                contentDisposition: sourceMetadata.contentDisposition ?? "",
+                contentLanguage: sourceMetadata.contentLanguage ?? "",
+                expires: sourceMetadata.expires ?? "",
+                userMetadata: sourceMetadata.userMetadata
+            )
+            contentEncoding = sourceMetadata.contentEncoding
+        } else {
+            properties = nil
+            contentEncoding = nil
+        }
+        var initiateHeaders = try uploadHeaders(
+            contentType: properties.flatMap { $0.contentType.isEmpty ? nil : $0.contentType }
+                ?? "application/octet-stream",
+            acl: acl,
+            properties: properties,
+            contentEncoding: contentEncoding,
+            storageClass: storageClass,
+            serverSideEncryption: serverSideEncryption,
+            serverSideEncryptionKeyID: serverSideEncryptionKeyID,
+            serverSideDataEncryption: serverSideDataEncryption,
+            overwrite: overwrite
+        )
+        let tags = replacingTags ?? sourceTags
+        if !tags.isEmpty {
+            guard tags.count <= 10,
+                  tags.allSatisfy(\.isValidForOSS),
+                  Set(tags.map(\.key)).count == tags.count
+            else {
+                throw OSSServiceError(
+                    statusCode: 0,
+                    code: "InvalidTags",
+                    message: "对象标签格式无效",
+                    requestId: ""
+                )
+            }
+            initiateHeaders["x-oss-tagging"] = Self.taggingHeader(tags)
+        }
+        let initiated = try await perform(
+            method: "POST",
+            bucket: bucket,
+            key: destKey,
+            query: [("uploads", "")],
+            headers: initiateHeaders
+        )
+        let uploadID = try OSSXML.uploadId(from: initiated.data)
+        let partSize = Self.copyPartSize(for: sourceSize)
+        var parts: [(number: Int, etag: String)] = []
+        do {
+            var offset: Int64 = 0
+            var partNumber = 1
+            while offset < sourceSize {
+                try Task.checkCancellation()
+                let end = min(offset + partSize - 1, sourceSize - 1)
+                var partHeaders = [
+                    "x-oss-copy-source": source,
+                    "x-oss-copy-source-range": "bytes=\(offset)-\(end)"
+                ]
+                if let sourceETag, !sourceETag.isEmpty {
+                    guard let sourceETag = Self.normalizedETag(sourceETag) else {
+                        throw Self.invalidETag
+                    }
+                    partHeaders["x-oss-copy-source-if-match"] = Self.quotedETag(sourceETag)
+                }
+                let copied = try await perform(
+                    method: "PUT",
+                    bucket: bucket,
+                    key: destKey,
+                    query: [("partNumber", String(partNumber)), ("uploadId", uploadID)],
+                    headers: partHeaders
+                )
+                let etag = Self.normalizedETag(copied.headers.value("ETag"))
+                    ?? Self.normalizedETag(OSSXML.partETag(from: copied.data))
+                guard let etag else { throw Self.invalidETag }
+                parts.append((number: partNumber, etag: etag))
+                offset = end + 1
+                partNumber += 1
+            }
+            let commitVersioningStatus = try await requireWriteSafety(
+                overwrite: overwrite,
+                allowVersionedCreate: allowVersionedCreate
+            )
+            let completed = try await perform(
+                method: "POST",
+                bucket: bucket,
+                key: destKey,
+                query: [("uploadId", uploadID)],
+                headers: [:],
+                body: OSSXML.completeMultipartUploadXML(parts: parts)
+            )
+            let versionID = Self.exactVersionID(completed.headers.value("x-oss-version-id"))
+            let versionRequired = requireCommittedVersionID
+                || (allowVersionedCreate && commitVersioningStatus == .enabled)
+            guard !versionRequired || versionID != nil else {
+                throw CloudObjectOperationError.copyOutcomeUncertain(destination: destKey)
+            }
+            return versionID
+        } catch {
+            if let cloudError = error as? CloudObjectOperationError,
+               case .copyOutcomeUncertain = cloudError {
+                throw error
+            }
+            try? await abortMultipartUpload(
+                MultipartUploadCheckpoint(
+                    bucketName: bucket,
+                    objectKey: destKey,
+                    sourceSize: sourceSize,
+                    sourceModifiedAt: .distantPast,
+                    partSize: partSize,
+                    uploadID: uploadID,
+                    completedParts: []
+                )
+            )
+            guard Self.isAmbiguousWriteFailure(error) else { throw error }
+            throw CloudObjectOperationError.copyOutcomeUncertain(destination: destKey)
+        }
+    }
+
+    private static func copyPartSize(for sourceSize: Int64) -> Int64 {
+        // Same-bucket part-copy can use the 5 GiB part ceiling, so a file just
+        // over CopyObject's limit finishes in two requests.
+        _ = sourceSize
+        return maximumSingleCopyBytes
+    }
+
     @discardableResult
     func renameObject(
         from sourceKey: String,
@@ -872,9 +1078,6 @@ struct OSSClient: Sendable {
         guard let sourceSize = sourceSnapshot.head.contentLength else {
             throw Self.missingSourceIdentity(key: sourceKey)
         }
-        guard sourceSize <= Self.maximumSingleCopyBytes else {
-            throw Self.copyObjectTooLarge(key: sourceKey)
-        }
         let destinationVersionID = try await copyObject(
             from: sourceKey,
             to: destKey,
@@ -888,7 +1091,10 @@ struct OSSClient: Sendable {
             serverSideDataEncryption: sourceSnapshot.head.serverSideDataEncryption,
             allowVersionedCreate: true,
             requireCommittedVersionID: true,
-            versioningStatus: versioningStatus
+            versioningStatus: versioningStatus,
+            sourceSize: sourceSize,
+            sourceMetadata: sourceSnapshot.head,
+            sourceTags: sourceSnapshot.tags
         )
         guard let destinationVersionID = Self.exactVersionID(destinationVersionID) else {
             throw CloudObjectOperationError.copyOutcomeUncertain(destination: destKey)
@@ -1039,11 +1245,8 @@ struct OSSClient: Sendable {
         }
 
         for mapping in mappings {
-            guard let size = sourceSnapshots[mapping.sourceKey]?.head.contentLength else {
+            guard sourceSnapshots[mapping.sourceKey]?.head.contentLength != nil else {
                 throw Self.missingSourceIdentity(key: mapping.sourceKey)
-            }
-            guard size <= Self.maximumSingleCopyBytes else {
-                throw Self.copyObjectTooLarge(key: mapping.sourceKey)
             }
         }
 
@@ -1085,7 +1288,10 @@ struct OSSClient: Sendable {
                     requireCommittedVersionID: versioningStatus == .enabled,
                     expectedDestination: destinationIdentities[mapping.destinationKey],
                     versioningStatus: versioningStatus,
-                    preflightDestination: false
+                    preflightDestination: false,
+                    sourceSize: sourceSnapshot.head.contentLength,
+                    sourceMetadata: sourceSnapshot.head,
+                    sourceTags: sourceSnapshot.tags
                 )
                 if mode == .move, Self.exactVersionID(versionID) == nil {
                     throw CloudObjectOperationError.copyOutcomeUncertain(

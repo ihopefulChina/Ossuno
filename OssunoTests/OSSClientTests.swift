@@ -2086,7 +2086,7 @@ struct OSSClientTests {
         #expect(put.value(forHTTPHeaderField: "x-oss-copy-source") == "/bucket/old/a.txt?versionId=source-a-v1")
     }
 
-    @Test func mixedLargeBatchFailsBeforeTheFirstCopy() async throws {
+    @Test func mixedLargeBatchCopiesTheLargeObjectWithPartCopy() async throws {
         let mappings = [
             CloudObjectMapping(sourceKey: "old/small.bin", destinationKey: "new/small.bin"),
             CloudObjectMapping(sourceKey: "old/large.bin", destinationKey: "new/large.bin")
@@ -2101,21 +2101,48 @@ struct OSSClientTests {
             versionID: "source-large-v1",
             size: OSSClient.maximumSingleCopyBytes + 1
         )
+        steps += [
+            .response(status: 200, headers: ["x-oss-version-id": "small-v1"], data: Data()),
+            .response(
+                status: 200,
+                headers: [
+                    "Content-Length": "1",
+                    "ETag": "small-etag",
+                    "x-oss-version-id": "small-v1"
+                ],
+                data: Data()
+            ),
+            .response(
+                status: 200,
+                headers: [:],
+                data: Data("<InitiateMultipartUploadResult><UploadId>copy-u1</UploadId></InitiateMultipartUploadResult>".utf8)
+            ),
+            .response(status: 200, headers: ["ETag": "part-1"], data: Data()),
+            .response(status: 200, headers: ["ETag": "part-2"], data: Data()),
+            .response(status: 200, headers: ["x-oss-version-id": "large-v1"], data: Data()),
+            .response(
+                status: 200,
+                headers: [
+                    "Content-Length": String(OSSClient.maximumSingleCopyBytes + 1),
+                    "ETag": "large-etag",
+                    "x-oss-version-id": "large-v1"
+                ],
+                data: Data()
+            )
+        ]
         let transport = StubOSSTransport(steps: steps)
 
-        do {
-            _ = try await Self.client(
-                transport: transport,
-                versioningStatusOverride: .enabled
-            ).performCloudOperation(mappings, mode: .copy)
-            Issue.record("Expected large-copy rejection")
-        } catch let error as OSSServiceError {
-            #expect(error.code == "CopyObjectTooLarge")
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        let committed = try await Self.client(
+            transport: transport,
+            versioningStatusOverride: .enabled
+        ).performCloudOperation(mappings, mode: .copy)
 
-        #expect(await transport.recordedRequests().allSatisfy { $0.httpMethod != "PUT" })
+        #expect(committed["new/small.bin"]?.versionID == "small-v1")
+        #expect(committed["new/large.bin"]?.versionID == "large-v1")
+        let requests = await transport.recordedRequests()
+        #expect(requests.contains { $0.httpMethod == "POST" && $0.url?.query == "uploads" })
+        #expect(requests.filter { $0.url?.query?.contains("partNumber=") == true }.count == 2)
+        #expect(requests.contains { $0.httpMethod == "POST" && $0.url?.query == "uploadId=copy-u1" })
     }
 
     @Test func mutableOverlappingSourcesFailBeforeTheFirstCopy() async throws {

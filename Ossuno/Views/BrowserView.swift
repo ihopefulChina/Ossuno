@@ -339,7 +339,8 @@ struct BrowserView: View {
                             renameText: renameTextBinding(modelRef: modelRef),
                             onRenameCommit: { commitRename(with: modelRef) },
                             onRenameCancel: { modelRef.browser.cancelRenaming() },
-                            loadClient: { modelRef.makeClient() }
+                            loadClient: { modelRef.makeClient() },
+                            scope: modelRef.thumbnailScope
                         )
                         .contentShape(Rectangle())
                         .contextMenu {
@@ -379,7 +380,12 @@ struct BrowserView: View {
                     if row.isFolder {
                         FinderFolderIcon(size: 16)
                     } else if let object = row.object, object.isImage {
-                        ThumbnailView(object: object, style: .row, loadClient: { modelRef.makeClient() })
+                        ThumbnailView(
+                            object: object,
+                            style: .row,
+                            loadClient: { modelRef.makeClient() },
+                            scope: modelRef.thumbnailScope
+                        )
                             .frame(width: 18, height: 18)
                             .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
                     } else if let object = row.object {
@@ -887,11 +893,12 @@ private struct AssetCell: View {
     var onRenameCommit: () -> Void
     var onRenameCancel: () -> Void
     var loadClient: () -> OSSClient?
+    var scope: String
 
     var body: some View {
         ZStack(alignment: .bottom) {
             VStack(spacing: 4) {
-                ThumbnailView(object: object, loadClient: loadClient)
+                ThumbnailView(object: object, loadClient: loadClient, scope: scope)
                     .aspectRatio(1, contentMode: .fit)
                     .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                     .overlay {

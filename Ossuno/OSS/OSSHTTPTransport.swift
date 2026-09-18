@@ -100,7 +100,7 @@ struct URLSessionOSSHTTPTransport: OSSHTTPTransport {
         // instead of trapping with uniqueKeysWithValues.
         var merged: [String: String] = [:]
         for (key, value) in http.allHeaderFields {
-            merged["\(key)"] = "\(value)"
+            merged["\(key)".lowercased()] = "\(value)"
         }
         return merged
     }

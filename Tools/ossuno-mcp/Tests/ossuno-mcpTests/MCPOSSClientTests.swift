@@ -323,6 +323,68 @@ final class MCPOSSClientTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(recorder.requests.map(\.httpMethod), ["GET"])
     }
 
+    func testLargeUploadUsesMultipart() async throws {
+        let recorder = RequestRecorder()
+        MockURLProtocol.setHandler { request in
+            recorder.append(request)
+            let query = request.url?.query ?? ""
+            if query.contains("uploads") {
+                return (
+                    HTTPURLResponse(
+                        url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                        headerFields: nil
+                    )!,
+                    Data("<InitiateMultipartUploadResult><UploadId>u-large</UploadId></InitiateMultipartUploadResult>".utf8)
+                )
+            }
+            if query.contains("partNumber=") {
+                return (
+                    HTTPURLResponse(
+                        url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                        headerFields: ["ETag": "\"part-\(query)\""]
+                    )!,
+                    Data()
+                )
+            }
+            if query == "uploadId=u-large" {
+                return (
+                    HTTPURLResponse(
+                        url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                        headerFields: ["ETag": "\"complete\""]
+                    )!,
+                    Data()
+                )
+            }
+            return (
+                HTTPURLResponse(
+                    url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: nil
+                )!,
+                Data()
+            )
+        }
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ossuno-mcp-multipart-\(UUID().uuidString).bin")
+        FileManager.default.createFile(atPath: file.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.truncate(atOffset: UInt64(MCPOSSClient.multipartThreshold + 1))
+        try handle.close()
+        defer { try? FileManager.default.removeItem(at: file) }
+
+        let result = try await makeClient().uploadFile(
+            bucket: "bucket",
+            key: "large.bin",
+            fileURL: file,
+            contentType: "application/octet-stream",
+            overwrite: true
+        )
+        XCTAssertEqual(result.etag, "complete")
+        XCTAssertEqual(result.size, MCPOSSClient.multipartThreshold + 1)
+        XCTAssertEqual(recorder.requests.map(\.httpMethod), ["POST", "PUT", "PUT", "POST"])
+        XCTAssertEqual(recorder.requests.first?.url?.query, "uploads")
+        XCTAssertEqual(recorder.requests.last?.url?.query, "uploadId=u-large")
+    }
+
     func testDownloadStreamsThenPublishesDestination() async throws {
         MockURLProtocol.setHandler { request in
             (

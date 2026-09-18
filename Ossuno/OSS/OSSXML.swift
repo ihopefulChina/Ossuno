@@ -95,6 +95,11 @@ enum OSSXML {
         return id
     }
 
+    static func partETag(from data: Data) -> String? {
+        guard let root = try? parse(data) else { return nil }
+        return root.child("ETag")?.string
+    }
+
     static func objectACL(from data: Data) throws -> ObjectACL {
         let root = try parse(data)
         let accessControlList: XMLNode?

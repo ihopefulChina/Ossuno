@@ -48,7 +48,12 @@ struct BucketSearchView: View {
             TableColumn("名称") { object in
                 HStack(spacing: 6) {
                     if object.isImage {
-                        ThumbnailView(object: object, style: .row, loadClient: { modelRef.makeClient() })
+                        ThumbnailView(
+                            object: object,
+                            style: .row,
+                            loadClient: { modelRef.makeClient() },
+                            scope: modelRef.thumbnailScope
+                        )
                             .frame(width: 18, height: 18)
                             .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
                     } else {

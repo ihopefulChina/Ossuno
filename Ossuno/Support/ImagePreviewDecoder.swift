@@ -61,6 +61,18 @@ enum ImagePreviewDecoder {
             return "org.webmproject.webp" as CFString
         }
         if data.starts(with: [0x47, 0x49, 0x46, 0x38]) { return "com.compuserve.gif" as CFString }
+        if data.count >= 12,
+           data[4...7].elementsEqual(Array("ftyp".utf8)),
+           let brand = String(data: data[8..<12], encoding: .ascii) {
+            switch brand {
+            case "heic", "heix", "hevc", "hevx":
+                return "public.heic" as CFString
+            case "mif1", "msf1", "heif":
+                return "public.heif" as CFString
+            default:
+                break
+            }
+        }
         return nil
     }
 

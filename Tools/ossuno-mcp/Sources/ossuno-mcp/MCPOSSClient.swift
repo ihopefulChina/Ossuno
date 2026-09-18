@@ -1,9 +1,10 @@
 import Foundation
 
-/// Thin OSS REST client for the MCP server. Single-request operations only —
-/// uploads stream the file via URLSession upload; large-file multipart stays
-/// in the GUI app.
+/// Thin OSS REST client for the MCP server. Uploads stream via URLSession;
+/// files larger than 8 MiB use multipart so a single PUT is not required.
 final class MCPOSSClient: @unchecked Sendable {
+    static let multipartThreshold: Int64 = 8 * 1024 * 1024
+    static let partSize: Int64 = 8 * 1024 * 1024
     let profile: MCPOSSProfile
     private let redirectDelegate: OSSRedirectRejectingDelegate
     private let session: URLSession
@@ -250,6 +251,15 @@ final class MCPOSSClient: @unchecked Sendable {
             }
             headers["x-oss-forbid-overwrite"] = "true"
         }
+        if size > Self.multipartThreshold {
+            return try await uploadFileMultipart(
+                bucket: bucket,
+                key: key,
+                fileURL: fileURL,
+                size: size,
+                headers: headers
+            )
+        }
         let (data, http) = try await perform(
             method: "PUT",
             bucket: bucket,
@@ -267,6 +277,88 @@ final class MCPOSSClient: @unchecked Sendable {
             etag: etag,
             url: try publicURL(bucket: bucket, key: key)
         )
+    }
+
+    private func uploadFileMultipart(
+        bucket: String,
+        key: String,
+        fileURL: URL,
+        size: Int64,
+        headers: [String: String]
+    ) async throws -> UploadResult {
+        let (initiated, _) = try await perform(
+            method: "POST",
+            bucket: bucket,
+            key: key,
+            query: [("uploads", "")],
+            headers: headers
+        )
+        let uploadID = try OSSXML.uploadId(from: initiated)
+        var parts: [(number: Int, etag: String)] = []
+        do {
+            let handle = try FileHandle(forReadingFrom: fileURL)
+            defer { try? handle.close() }
+            var offset: Int64 = 0
+            var partNumber = 1
+            while offset < size {
+                let length = min(Self.partSize, size - offset)
+                try handle.seek(toOffset: UInt64(offset))
+                let chunk = try handle.read(upToCount: Int(length)) ?? Data()
+                guard chunk.count == length else {
+                    throw OSSServiceError(
+                        statusCode: 0,
+                        code: "SourceFileChanged",
+                        message: "本地文件在上传期间发生变化，请重新上传",
+                        requestId: ""
+                    )
+                }
+                let (_, http) = try await perform(
+                    method: "PUT",
+                    bucket: bucket,
+                    key: key,
+                    query: [("partNumber", String(partNumber)), ("uploadId", uploadID)],
+                    headers: [:],
+                    body: chunk
+                )
+                let etag = http.value(forHTTPHeaderField: "ETag")?
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "\"")) ?? ""
+                guard !etag.isEmpty else {
+                    throw OSSServiceError(
+                        statusCode: 0,
+                        code: "InvalidETag",
+                        message: "OSS 返回的 ETag 格式无效，已取消操作",
+                        requestId: ""
+                    )
+                }
+                parts.append((number: partNumber, etag: etag))
+                offset += length
+                partNumber += 1
+            }
+            let (_, completed) = try await perform(
+                method: "POST",
+                bucket: bucket,
+                key: key,
+                query: [("uploadId", uploadID)],
+                body: OSSXML.completeMultipartUploadXML(parts: parts)
+            )
+            let etag = completed.value(forHTTPHeaderField: "ETag")?
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\"")) ?? parts.last?.etag ?? ""
+            return UploadResult(
+                bucket: bucket,
+                key: key,
+                size: size,
+                etag: etag,
+                url: try publicURL(bucket: bucket, key: key)
+            )
+        } catch {
+            _ = try? await perform(
+                method: "DELETE",
+                bucket: bucket,
+                key: key,
+                query: [("uploadId", uploadID)]
+            )
+            throw error
+        }
     }
 
     struct DownloadResult: Sendable {

@@ -108,6 +108,8 @@ final class AppModel {
     private var pendingOwnedTemporaryURLs: Set<URL> = []
     private var ownedPreviewURLs: Set<URL> = []
     var overwritePrompt: OverwritePrompt?
+    private var pendingUploadBatches: [PendingUploadBatch] = []
+    private var isProcessingUploads = false
     private var uploadGeneration = 0
     private var previewGeneration = 0
     private var didLoadWindow = false
@@ -742,6 +744,10 @@ final class AppModel {
         }
     }
 
+    var thumbnailScope: String {
+        "\(selectedAccountID?.uuidString ?? "")|\(selectedBucketName ?? "")"
+    }
+
     func makeClient() -> OSSClient? {
         guard let account = selectedAccount else { return nil }
         do {
@@ -918,8 +924,8 @@ final class AppModel {
         }
         let dest = prefix ?? browser.prefix
         let useTemplate = applyTemplate ?? dest.isEmpty
-        Task {
-            await beginUpload(
+        pendingUploadBatches.append(
+            PendingUploadBatch(
                 urls: urls,
                 prefix: dest,
                 applyTemplate: useTemplate,
@@ -928,7 +934,8 @@ final class AppModel {
                 account: account,
                 bucket: bucket
             )
-        }
+        )
+        Task { await processPendingUploads() }
     }
 
     func confirmOverwrite() {
@@ -945,6 +952,7 @@ final class AppModel {
             bucket: prompt.bucket,
             overwriteDestinations: prompt.overwriteDestinations
         )
+        Task { await processPendingUploads() }
     }
 
     func skipOverwriteConflicts() {
@@ -957,12 +965,32 @@ final class AppModel {
             bucket: prompt.bucket,
             excludingSources: prompt.skipSources
         )
+        Task { await processPendingUploads() }
     }
 
     func cancelOverwrite() {
         guard let prompt = overwritePrompt else { return }
         overwritePrompt = nil
         transfers.abandon(plan: prompt.plan)
+        Task { await processPendingUploads() }
+    }
+
+    private func processPendingUploads() async {
+        guard !isProcessingUploads else { return }
+        isProcessingUploads = true
+        defer { isProcessingUploads = false }
+        while overwritePrompt == nil, let batch = pendingUploadBatches.first {
+            pendingUploadBatches.removeFirst()
+            await beginUpload(
+                urls: batch.urls,
+                prefix: batch.prefix,
+                applyTemplate: batch.applyTemplate,
+                ownedTemporaryURLs: batch.ownedTemporaryURLs,
+                client: batch.client,
+                account: batch.account,
+                bucket: batch.bucket
+            )
+        }
     }
 
     private func beginUpload(
@@ -976,9 +1004,6 @@ final class AppModel {
     ) async {
         uploadGeneration += 1
         let generation = uploadGeneration
-        if overwritePrompt != nil {
-            cancelOverwrite()
-        }
         let options = TransferEngine.UploadPreparationOptions(
             // Browsing filters must never discard files selected for upload.
             imagesOnly: false,
@@ -1121,6 +1146,7 @@ final class AppModel {
             bucket: prompt.bucket,
             excludingSources: applied.excludedSources
         )
+        Task { await processPendingUploads() }
     }
 
     private func applyingUploadResolutions(
@@ -1170,18 +1196,23 @@ final class AppModel {
         scheduleListingRefresh()
     }
 
+    static let existingKeysHeadLimit = 100
+
     func existingKeys(among keys: [String], client: OSSClient) async throws -> Set<String> {
         let unique = Array(Set(keys))
-        if unique.count > 40 {
+        if unique.count > Self.existingKeysHeadLimit {
             let parents = Set(unique.map { PathTemplate.parentPrefix($0) })
             var found = Set<String>()
             for parent in parents {
+                let scoped = unique.filter { PathTemplate.parentPrefix($0) == parent }
+                // A bucket-root listing can be enormous; HEAD the exact keys.
+                if parent.isEmpty {
+                    found.formUnion(try await existingKeysByHead(scoped, client: client))
+                    continue
+                }
                 let listing = try await client.listAllObjects(prefix: parent)
                 if listing.truncated {
-                    found.formUnion(try await existingKeysByHead(
-                        unique.filter { PathTemplate.parentPrefix($0) == parent },
-                        client: client
-                    ))
+                    found.formUnion(try await existingKeysByHead(scoped, client: client))
                     continue
                 }
                 found.formUnion(listing.objects.map(\.key))
@@ -2357,7 +2388,10 @@ final class AppModel {
                         serverSideEncryption: head.serverSideEncryption,
                         serverSideEncryptionKeyID: head.serverSideEncryptionKeyID,
                         serverSideDataEncryption: head.serverSideDataEncryption,
-                        requireCommittedVersionID: true
+                        requireCommittedVersionID: true,
+                        sourceSize: head.contentLength,
+                        sourceMetadata: head,
+                        sourceTags: snapshot.tags
                     )
                 } catch let error {
                     if let cloudError = error as? CloudObjectOperationError,
@@ -3211,7 +3245,8 @@ final class AppModel {
     }
 
     func downloadRelativePath(for object: OSSObject, preserveKeyPath: Bool) -> String {
-        preserveKeyPath ? PathTemplate.sanitizeKey(object.key) : object.name
+        let raw = preserveKeyPath ? PathTemplate.sanitizeKey(object.key) : object.name
+        return FileSafety.sanitizedRelativePath(raw)
     }
 
     func startDownloads(
@@ -3268,7 +3303,9 @@ final class AppModel {
                     do {
                         url = try FileSafety.destination(
                             root: dest,
-                            relativePath: PathTemplate.join(folderName, key: relative)
+                            relativePath: FileSafety.sanitizedRelativePath(
+                                PathTemplate.join(folderName, key: relative)
+                            )
                         )
                     } catch {
                         skippedUnsafe += 1
@@ -3287,7 +3324,7 @@ final class AppModel {
             }
             return
         }
-        let folderRoots = prefixes.map { $0.1 + "/" }
+        let folderRoots = prefixes.map { FileSafety.sanitizedFileName($0.1) + "/" }
         guard let resolved = resolveDownloadConflicts(
             items: items,
             root: dest,
@@ -3532,7 +3569,7 @@ final class AppModel {
         let generation = previewGeneration
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "OssunoQuickLook", directoryHint: .isDirectory)
-        let name = (try? ObjectNameValidator.validate(object.name)) ?? "预览文件"
+        let name = FileSafety.sanitizedFileName(object.name)
         let dest: URL
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

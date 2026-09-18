@@ -358,6 +358,13 @@ struct SafetyAndVersionTests {
         #expect(url.port == 9000)
     }
 
+    @Test func sanitizedNamesReplaceColonAndRejectTraversal() {
+        #expect(FileSafety.sanitizedFileName("shot:1.png") == "shot-1.png")
+        #expect(FileSafety.sanitizedRelativePath("a:b/c:d.jpg") == "a-b/c-d.jpg")
+        #expect(FileSafety.sanitizedFileName("..") == "未命名文件")
+        #expect(FileSafety.sanitizedFileName("") == "未命名文件")
+    }
+
     @Test func unsafeRelativePathsAreRejected() {
         #expect(throws: FileSafety.Error.self) {
             try FileSafety.relativeComponents("../outside.txt")

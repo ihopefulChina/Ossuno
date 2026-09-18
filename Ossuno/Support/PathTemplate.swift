@@ -75,12 +75,13 @@ enum PathTemplate {
     static func nestedRelative(rootName: String, rootPath: String, filePath: String) -> String {
         let root = (rootPath as NSString).standardizingPath
         let file = (filePath as NSString).standardizingPath
-        var rel = file
-        if file.hasPrefix(root) {
-            rel = String(file.dropFirst(root.count))
-        }
-        while rel.hasPrefix("/") {
-            rel = String(rel.dropFirst())
+        let rel: String
+        if file == root {
+            rel = ""
+        } else if file.hasPrefix(root + "/") {
+            rel = String(file.dropFirst(root.count + 1))
+        } else {
+            rel = lastComponent(file)
         }
         return join(rootName, key: rel)
     }

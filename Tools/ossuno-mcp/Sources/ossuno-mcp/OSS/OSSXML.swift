@@ -115,6 +115,37 @@ enum OSSXML {
             )
         }
     }
+
+    static func uploadId(from data: Data) throws -> String {
+        let root = try parse(data)
+        guard let id = root.child("UploadId")?.string, !id.isEmpty else {
+            throw OSSServiceError(
+                statusCode: 200,
+                code: "MissingUploadId",
+                message: "未返回分片上传 ID",
+                requestId: ""
+            )
+        }
+        return id
+    }
+
+    static func completeMultipartUploadXML(parts: [(number: Int, etag: String)]) -> Data {
+        var xml = "<CompleteMultipartUpload>"
+        for (number, etag) in parts.sorted(by: { $0.number < $1.number }) {
+            xml += "<Part><PartNumber>\(number)</PartNumber><ETag>\"\(escape(etag))\"</ETag></Part>"
+        }
+        xml += "</CompleteMultipartUpload>"
+        return Data(xml.utf8)
+    }
+
+    static func escape(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&apos;")
+    }
 }
 
 enum ISO8601DateParser {

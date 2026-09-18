@@ -321,25 +321,55 @@ struct MCPPathPolicy: Sendable {
         var template = Array(
             directory.appendingPathComponent("ossuno-mcp-upload-XXXXXX").path.utf8CString
         )
-        let destination = mkstemp(&template)
-        guard destination >= 0 else {
+        let placeholder = mkstemp(&template)
+        guard placeholder >= 0 else {
             throw MCPPathPolicyError.cannotWrite(directory.path)
         }
+        Darwin.close(placeholder)
         let path = String(
             decoding: template.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) },
             as: UTF8.self
         )
+        unlink(path)
         let url = URL(fileURLWithPath: path)
         var keepFile = false
         defer {
-            Darwin.close(destination)
             if !keepFile { try? FileManager.default.removeItem(at: url) }
         }
-        guard fchmod(destination, mode_t(S_IRUSR | S_IWUSR)) == 0 else {
+
+        let directoryFd = directory.path.withCString {
+            open($0, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        }
+        guard directoryFd >= 0 else {
+            throw MCPPathPolicyError.cannotWrite(directory.path)
+        }
+        defer { Darwin.close(directoryFd) }
+
+        let cloned = url.lastPathComponent.withCString {
+            fclonefileat(source, directoryFd, $0, 0)
+        }
+        if cloned == 0 {
+            let clonedFd = path.withCString { open($0, O_RDONLY | O_NOFOLLOW | O_CLOEXEC) }
+            if clonedFd >= 0 {
+                _ = fchmod(clonedFd, mode_t(S_IRUSR | S_IWUSR))
+                Darwin.close(clonedFd)
+            }
+            keepFile = true
+            return url
+        }
+
+        let copied = path.withCString {
+            open($0, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, mode_t(S_IRUSR | S_IWUSR))
+        }
+        guard copied >= 0 else {
             throw MCPPathPolicyError.cannotWrite(url.path)
         }
-        try copyFileDescriptor(from: source, to: destination)
-        guard fsync(destination) == 0 else {
+        defer { Darwin.close(copied) }
+        guard fchmod(copied, mode_t(S_IRUSR | S_IWUSR)) == 0 else {
+            throw MCPPathPolicyError.cannotWrite(url.path)
+        }
+        try copyFileDescriptor(from: source, to: copied)
+        guard fsync(copied) == 0 else {
             throw MCPPathPolicyError.cannotWrite(url.path)
         }
         keepFile = true

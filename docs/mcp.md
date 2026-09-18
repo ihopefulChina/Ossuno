@@ -14,7 +14,7 @@
 | --- | --- |
 | `list_buckets` | 列出账号下所有 Bucket（名称、地域、创建时间） |
 | `list_objects` | 浏览 Bucket 内的对象和子文件夹；返回截断标记与 `next_continuation_token`，下一页用 `continuation_token` 原样续查 |
-| `upload_file` | 上传允许目录内的普通文件；默认拒绝覆盖，只有用户明确确认后才传 `overwrite=true` |
+| `upload_file` | 上传允许目录内的普通文件；大于 8 MiB 走分片上传。默认拒绝覆盖，只有用户明确确认后才传 `overwrite=true` |
 | `download_file` | 下载到允许目录；拒绝符号链接逃逸，本地已有同名文件时不覆盖 |
 | `presign_url` | 为私有 Bucket 的对象生成带签名的临时下载链接（默认 1 小时） |
 
