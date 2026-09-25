@@ -860,7 +860,8 @@ struct OSSClient: Sendable {
                 sourceMetadata: sourceMetadata,
                 sourceTags: sourceTags,
                 requireCommittedVersionID: requireCommittedVersionID,
-                allowVersionedCreate: allowVersionedCreate
+                allowVersionedCreate: allowVersionedCreate,
+                expectedDestination: expectedDestination
             )
         }
         do {
@@ -906,7 +907,8 @@ struct OSSClient: Sendable {
         sourceMetadata: ObjectHead?,
         sourceTags: [OSSObjectTag],
         requireCommittedVersionID: Bool,
-        allowVersionedCreate: Bool
+        allowVersionedCreate: Bool,
+        expectedDestination: OSSObjectIdentity?
     ) async throws -> String? {
         guard let bucket else { throw Self.missingBucket }
         guard sourceSize > 0 else { throw Self.copyObjectTooLarge(key: sourceKey) }
@@ -1020,13 +1022,26 @@ struct OSSClient: Sendable {
                 overwrite: overwrite,
                 allowVersionedCreate: allowVersionedCreate
             )
+            if let expectedDestination {
+                // Parts can take long enough for the destination to change.
+                // Re-check immediately before Complete; OSS has no destination
+                // If-Match on UploadPartCopy or CompleteMultipartUpload.
+                try await requireDestinationIdentity(key: destKey, expected: expectedDestination)
+            }
+            let completionBody = OSSXML.completeMultipartUploadXML(parts: parts)
+            var completionHeaders: [String: String] = [:]
+            if !overwrite {
+                // OSS requires the no-overwrite guard on both Initiate and
+                // Complete. An object may appear while parts are copying.
+                completionHeaders["x-oss-forbid-overwrite"] = "true"
+            }
             let completed = try await perform(
                 method: "POST",
                 bucket: bucket,
                 key: destKey,
                 query: [("uploadId", uploadID)],
-                headers: [:],
-                body: OSSXML.completeMultipartUploadXML(parts: parts)
+                headers: completionHeaders,
+                body: completionBody
             )
             let versionID = Self.exactVersionID(completed.headers.value("x-oss-version-id"))
             let versionRequired = requireCommittedVersionID

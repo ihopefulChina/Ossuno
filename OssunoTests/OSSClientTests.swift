@@ -2140,9 +2140,63 @@ struct OSSClientTests {
         #expect(committed["new/small.bin"]?.versionID == "small-v1")
         #expect(committed["new/large.bin"]?.versionID == "large-v1")
         let requests = await transport.recordedRequests()
-        #expect(requests.contains { $0.httpMethod == "POST" && $0.url?.query == "uploads" })
+        let initiate = try #require(requests.first { $0.httpMethod == "POST" && $0.url?.query == "uploads" })
+        #expect(initiate.value(forHTTPHeaderField: "x-oss-forbid-overwrite") == "true")
         #expect(requests.filter { $0.url?.query?.contains("partNumber=") == true }.count == 2)
-        #expect(requests.contains { $0.httpMethod == "POST" && $0.url?.query == "uploadId=copy-u1" })
+        let complete = try #require(requests.first { $0.httpMethod == "POST" && $0.url?.query == "uploadId=copy-u1" })
+        #expect(complete.value(forHTTPHeaderField: "x-oss-forbid-overwrite") == "true")
+    }
+
+    @Test func largeOverwriteCopyStopsWhenTheDestinationChangesBeforeComplete() async throws {
+        let expected = OSSObjectIdentity(etag: "dest-etag", versionID: "dest-v1", size: 4)
+        let transport = StubOSSTransport(steps: [
+            .response(
+                status: 200,
+                headers: ["Content-Length": "4", "ETag": "dest-etag", "x-oss-version-id": "dest-v1"],
+                data: Data()
+            ),
+            .response(
+                status: 200,
+                headers: [:],
+                data: Data("<InitiateMultipartUploadResult><UploadId>copy-u1</UploadId></InitiateMultipartUploadResult>".utf8)
+            ),
+            .response(status: 200, headers: ["ETag": "part-1"], data: Data()),
+            .response(status: 200, headers: ["ETag": "part-2"], data: Data()),
+            .response(
+                status: 200,
+                headers: ["Content-Length": "9", "ETag": "other-etag", "x-oss-version-id": "dest-v2"],
+                data: Data()
+            ),
+            .response(status: 204, headers: [:], data: Data())
+        ])
+
+        do {
+            _ = try await Self.client(
+                transport: transport,
+                versioningStatusOverride: .enabled
+            ).copyObject(
+                from: "old/large.bin",
+                to: "new/large.bin",
+                overwrite: true,
+                sourceETag: "source-large",
+                sourceVersionID: "source-large-v1",
+                allowVersionedCreate: true,
+                requireCommittedVersionID: true,
+                expectedDestination: expected,
+                versioningStatus: .enabled,
+                preflightDestination: false,
+                sourceSize: OSSClient.maximumSingleCopyBytes + 1
+            )
+            Issue.record("Expected destination change before complete")
+        } catch let error as OSSServiceError {
+            #expect(error.code == "DestinationChanged")
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        let requests = await transport.recordedRequests()
+        #expect(requests.contains { $0.httpMethod == "DELETE" && $0.url?.query == "uploadId=copy-u1" })
+        #expect(requests.allSatisfy { $0.httpMethod != "POST" || $0.url?.query != "uploadId=copy-u1" })
     }
 
     @Test func mutableOverlappingSourcesFailBeforeTheFirstCopy() async throws {

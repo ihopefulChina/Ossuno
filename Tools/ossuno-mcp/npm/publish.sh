@@ -26,16 +26,27 @@ fi
 if ! command -v npm >/dev/null; then
   echo "错误：未找到 npm。" >&2; exit 1
 fi
+copy_release_binary() {
+  local arch="$1"
+  local dest="$2"
+  swift build --disable-sandbox -c release --arch "$arch"
+  local binary
+  binary="$(swift build --disable-sandbox -c release --arch "$arch" --show-bin-path)/ossuno-mcp"
+  if [ ! -f "$binary" ]; then
+    echo "错误：未找到 $arch 发布二进制：$binary" >&2
+    exit 1
+  fi
+  mkdir -p "$(dirname "$dest")"
+  cp "$binary" "$dest"
+}
+
 echo "==> 构建 arm64..."
 cd "$SWIFT_DIR"
-swift build --disable-sandbox -c release --arch arm64
-mkdir -p "$NPM_DIR/ossuno-mcp-darwin-arm64/bin"
-cp .build/arm64-apple-macosx/release/ossuno-mcp "$NPM_DIR/ossuno-mcp-darwin-arm64/bin/ossuno-mcp"
+swift package clean
+copy_release_binary arm64 "$NPM_DIR/ossuno-mcp-darwin-arm64/bin/ossuno-mcp"
 
 echo "==> 交叉编译 x86_64..."
-swift build --disable-sandbox -c release --arch x86_64
-mkdir -p "$NPM_DIR/ossuno-mcp-darwin-x64/bin"
-cp .build/x86_64-apple-macosx/release/ossuno-mcp "$NPM_DIR/ossuno-mcp-darwin-x64/bin/ossuno-mcp"
+copy_release_binary x86_64 "$NPM_DIR/ossuno-mcp-darwin-x64/bin/ossuno-mcp"
 
 echo "==> 同步版本号到 $VERSION ..."
 cd "$NPM_DIR"
@@ -62,11 +73,29 @@ X64_BINARY="$NPM_DIR/ossuno-mcp-darwin-x64/bin/ossuno-mcp"
 lipo "$ARM_BINARY" -verify_arch arm64
 lipo "$X64_BINARY" -verify_arch x86_64
 ARM_VERSION="$(/usr/bin/arch -arm64 "$ARM_BINARY" --version)"
-X64_VERSION="$(/usr/bin/arch -x86_64 "$X64_BINARY" --version)"
 EXPECTED="ossuno-mcp $VERSION"
-if [ "$ARM_VERSION" != "$EXPECTED" ] || [ "$X64_VERSION" != "$EXPECTED" ]; then
-  echo "错误：二进制版本不一致。期望 '$EXPECTED'，arm64='$ARM_VERSION'，x64='$X64_VERSION'。" >&2
+if [ "$ARM_VERSION" != "$EXPECTED" ]; then
+  echo "错误：二进制版本不一致。期望 '$EXPECTED'，arm64='$ARM_VERSION'。" >&2
   exit 1
+fi
+if X64_VERSION="$(/usr/bin/arch -x86_64 "$X64_BINARY" --version 2>/dev/null)" && [ -n "$X64_VERSION" ]; then
+  if [ "$X64_VERSION" != "$EXPECTED" ]; then
+    echo "错误：二进制版本不一致。期望 '$EXPECTED'，x64='$X64_VERSION'。" >&2
+    exit 1
+  fi
+else
+  # Apple Silicon without Rosetta cannot execute the x86_64 binary.
+  # Swift may store the banner as one C string or as adjacent strings
+  # ("ossuno-mcp" then the version). A lone version number is not enough.
+  if ! strings -a "$X64_BINARY" | awk -v version="$VERSION" '
+    $0 == "ossuno-mcp " version { found = 1 }
+    (prev == "ossuno-mcp" || prev == "ossuno-mcp ") && $0 == version { found = 1 }
+    { prev = $0 }
+    END { exit found ? 0 : 1 }
+  '; then
+    echo "错误：x86_64 二进制缺少版本标识 'ossuno-mcp $VERSION'，且本机无法运行该架构。" >&2
+    exit 1
+  fi
 fi
 node -e '
 const fs = require("fs");
